@@ -2,22 +2,48 @@ package phonelab
 
 import (
 	"testing"
-	//	"github.com/stretchr/testify/assert"
 )
 
-// TODO: test trace tags
-/*
+func TestTraceParser(t *testing.T) {
+	parser := NewKernelTraceParser()
 
-	str := "aeea32238ddb516568b10685a5f38089a6450252        1462470176659   1462470176659.25        29b2b79e-1a97-4f96-8070-7a26f952e92b    31950   1932.849444     2016-05-05 17:42:56.659837      216     216     D	       Kernel-Trace    kworker/0:3-2658  [000] ...1  1932.849097: sched_cpu_hotplug: cpu 1 online error=0"
+	// We only want to test trace obj
+	parser.ErrOnUnknownTag = false
+	parser.Subparsers = make(map[string]Parser)
 
-	logline, err := ParseLogline(str)
-	assert.NotNil(logline)
-	assert.Nil(err)
-	trace := ParseTraceFromLoglinePayload(logline)
-
-	assert.NotEqual(nil, trace, "Parsing failed")
-	assert.Equal("sched_cpu_hotplug", trace.Tag(), "Tag does not match")
-*/
+	testConf := []*parseComparison{
+		// Existing, OK
+		&parseComparison{
+			line: "aeea32238ddb516568b10685a5f38089a6450252        1462470176659   1462470176659.25        29b2b79e-1a97-4f96-8070-7a26f952e92b    31950   1932.849444     2016-05-05 17:42:56.659837      216     216     D	       Kernel-Trace    kworker/0:3-2658  [000] ...1  1932.849097: sched_cpu_hotplug: cpu 1 online error=0",
+			parser:   parser,
+			expected: &Trace{Thread: "kworker/0:3-2658", Cpu: 0, Unknown: "...1", Timestamp: float64(1932.849097), Tag: "sched_cpu_hotplug"},
+		},
+		// Existing (modified), OK
+		&parseComparison{
+			line:     "1b0676e5fb2d7ab82a2b76887c53e94cf0410826        1461715200524   1461715200524.17        346fb177-c54f-4f8a-9385-124c461fd5cc    1268385 20456.226252    2016-04-27 00:00:00.524332      203     203     D   Kernel-Trace     kworker/0:2-1911  [003] ...1 20455.979145: thermal_temp: sensor_id=5 temp=32",
+			parser:   parser,
+			expected: &Trace{Thread: "kworker/0:2-1911", Cpu: 3, Unknown: "...1", Timestamp: float64(20455.979145), Tag: "thermal_temp"},
+		},
+		// Fictitious, OK
+		&parseComparison{
+			line:     "1b0676e5fb2d7ab82a2b76887c53e94cf0410826        1461715200524   1461715200524.17        346fb177-c54f-4f8a-9385-124c461fd5cc    1268385 20456.226252    2016-04-27 00:00:00.524332      203     203     D   Kernel-Trace     kworker/0:2-1911  [003] ...1 20455.979145: some_new_tag: foo=5 bar=32 blah,blah,blah...",
+			parser:   parser,
+			expected: &Trace{Thread: "kworker/0:2-1911", Cpu: 3, Unknown: "...1", Timestamp: float64(20455.979145), Tag: "some_new_tag"},
+		},
+		// Invalid
+		&parseComparison{
+			line:          "1b0676e5fb2d7ab82a2b76887c53e94cf0410826        1461715200524   1461715200524.17        346fb177-c54f-4f8a-9385-124c461fd5cc    1268385 20456.226252    2016-04-27 00:00:00.524332      203     203     D   Kernel-Trace     kworker/0:2-1911  [003] ...1 20455.9791",
+			parser:        parser,
+			subParseFails: true,
+		},
+		&parseComparison{
+			line:          "1b0676e5fb2d7ab82a2b76887c53e94cf0410826        1461715200524   1461715200524.17        346fb177-c54f-4f8a-9385-124c461fd5cc    1268385 20456.226252    2016-04-27 00:00:00.524332      203     203     D   Kernel-Trace     kworker/0:2-1911  [003] ...1 20455.979145: tag_without_colon somedata...",
+			parser:        parser,
+			subParseFails: true,
+		},
+	}
+	commonTestParse(testConf, t)
+}
 
 func TestKernelTraceParser(t *testing.T) {
 	t.Parallel()

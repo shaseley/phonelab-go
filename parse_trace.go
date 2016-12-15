@@ -40,10 +40,13 @@ type Trace struct {
 type KernelTraceParser struct {
 	RegexParser *RegexParser
 	Subparsers  map[string]Parser
+
+	// Parameters
+	ErrOnUnknownTag bool
 }
 
 func NewKernelTraceParser() *KernelTraceParser {
-	parser := &KernelTraceParser{}
+	parser := &KernelTraceParser{ErrOnUnknownTag: true}
 	parser.RegexParser = NewRegexParser(parser)
 
 	// TODO: This should be ad hoc
@@ -90,7 +93,11 @@ func (p *KernelTraceParser) Parse(line string) (interface{}, error) {
 	// Parse the payload
 	parser, ok := p.Subparsers[trace.Tag]
 	if !ok {
-		return nil, fmt.Errorf("No parser defined for trace tag '%v'", trace.Tag)
+		if p.ErrOnUnknownTag {
+			return nil, fmt.Errorf("No parser defined for trace tag '%v'", trace.Tag)
+		} else {
+			return trace, nil
+		}
 	}
 
 	if obj, err := parser.Parse(p.RegexParser.LastMap["text"]); err != nil {
