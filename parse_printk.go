@@ -118,6 +118,11 @@ func (p *PrintkParser) Parse(line string) (interface{}, error) {
 		printk = obj.(*PrintkLog)
 	}
 
+	// Timestamp (new)
+	if printk.TimestampUs > 0 {
+		printk.Timestamp = float64(printk.TimestampUs) / float64(1000000)
+	}
+
 	payload := p.RegexParser.LastMap["payload"]
 
 	// Find the parser by prefix
@@ -127,11 +132,6 @@ func (p *PrintkParser) Parse(line string) (interface{}, error) {
 			parser = pkp.Parser
 			break
 		}
-	}
-
-	// Timestamp (new)
-	if printk.TimestampUs > 0 {
-		printk.Timestamp = float64(printk.TimestampUs) / float64(1000000)
 	}
 
 	if parser == nil {
