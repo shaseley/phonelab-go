@@ -160,7 +160,7 @@ func shallowEqual(obj1 interface{}, obj2 interface{}) bool {
 }
 
 func TestShallowEqual(t *testing.T) {
-
+	t.Parallel()
 	assert := assert.New(t)
 
 	type testEqStruct struct {

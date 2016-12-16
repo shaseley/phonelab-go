@@ -5,7 +5,7 @@ import (
 )
 
 func TestParseMsmThermalPrintk(t *testing.T) {
-
+	t.Parallel()
 	parser := NewPrintkParser()
 
 	testConf := []*parseComparison{
@@ -35,6 +35,7 @@ func TestParseMsmThermalPrintk(t *testing.T) {
 }
 
 func TestParseMsmThermalPrintkNewFmt(t *testing.T) {
+	t.Parallel()
 	parser := NewPrintkParser()
 
 	testConf := []*parseComparison{
@@ -64,7 +65,7 @@ func TestParseMsmThermalPrintkNewFmt(t *testing.T) {
 }
 
 func TestParseHealthd(t *testing.T) {
-
+	t.Parallel()
 	parser := NewPrintkParser()
 
 	testConf := []*parseComparison{
@@ -83,6 +84,7 @@ func TestParseHealthd(t *testing.T) {
 }
 
 func TestParseHealthdNewFmt(t *testing.T) {
+	t.Parallel()
 	parser := NewPrintkParser()
 	testConf := []*parseComparison{
 		&parseComparison{

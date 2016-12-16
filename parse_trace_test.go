@@ -5,6 +5,7 @@ import (
 )
 
 func TestTraceParser(t *testing.T) {
+	t.Parallel()
 	parser := NewKernelTraceParser()
 
 	// We only want to test trace obj
