@@ -88,7 +88,8 @@ func TestParseHealthdNewFmt(t *testing.T) {
 		&parseComparison{
 			line:     `18dd7dab-fc30-41d2-a9e1-27e2ef0012a7 1970-05-30 21:42:28.99999999 2628 [    5.704512]   386   386 D KernelPrintk: 12,1547,5703232,-;healthd: battery [l=19 v=4020 t=32.1 h=2 st=2] c=1757 chg=a 1970-05-31 01:42:28.105726458 UTC`,
 			parser:   parser,
-			expected: &Healthd{L: 19, V: 4020, T: 32.1, H: 2, St: 2, C: 1757, Chg: "a"},
+			deep:     true,
+			expected: &Healthd{PrintkLog: PrintkLog{12, float64(5.703232), int64(5703232), int64(1547)}, L: 19, V: 4020, T: 32.1, H: 2, St: 2, C: 1757, Chg: "a"},
 		},
 	}
 

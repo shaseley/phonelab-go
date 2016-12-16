@@ -12,6 +12,7 @@ type parseComparison struct {
 	logParseFails bool
 	subParseFails bool
 	expected      interface{}
+	deep          bool
 }
 
 func commonTestParse(allconf []*parseComparison, t *testing.T) {
@@ -61,7 +62,12 @@ func commonTestParse(allconf []*parseComparison, t *testing.T) {
 		}
 
 		// Finally, compare
-		res := shallowEqual(conf.expected, obj)
+		res := false
+		if conf.deep {
+			res = reflect.DeepEqual(conf.expected, obj)
+		} else {
+			res = shallowEqual(conf.expected, obj)
+		}
 		assert.True(res)
 		if !res {
 			fail("Objects are not equal", conf)
