@@ -1,6 +1,7 @@
 package phonelab
 
 import (
+	"encoding/json"
 	"fmt"
 	"reflect"
 	"regexp"
@@ -253,4 +254,31 @@ func (p *MultRegexParser) Parse(line string) (interface{}, error) {
 	}
 
 	return nil, err
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// JSON parser. This simply unmarshals a JSON object into and object created
+// with the New() function.
+
+type JSONParserProps interface {
+	New() interface{}
+}
+
+type JSONParser struct {
+	Props JSONParserProps
+}
+
+func NewJSONParser(props JSONParserProps) *JSONParser {
+	return &JSONParser{
+		Props: props,
+	}
+}
+
+func (p *JSONParser) Parse(line string) (interface{}, error) {
+	obj := p.Props.New()
+	if err := json.Unmarshal([]byte(line), &obj); err != nil {
+		return nil, err
+	} else {
+		return obj, nil
+	}
 }
