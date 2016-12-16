@@ -9,6 +9,13 @@ import (
 	"strings"
 )
 
+// Tags we know how to handle
+const (
+	TAG_PRINTK           = "KernelPrintk"
+	TAG_TRACE            = "Kernel-Trace"
+	TAG_PL_POWER_BATTERY = "Power-Battery-PhoneLab"
+)
+
 // This is for subparsers, though the top-level logline parser also
 // kind of implements this interface.
 type Parser interface {
@@ -21,15 +28,15 @@ type ParserController interface {
 }
 
 type LoglineParser struct {
-	logcatParser    *LogcatParser
-	tagParsers      map[string]Parser
+	LogcatParser    *LogcatParser
+	TagParsers      map[string]Parser
 	ErrOnUnknownTag bool
 }
 
 func NewLoglineParser() *LoglineParser {
 	parser := &LoglineParser{
-		logcatParser:    NewLogcatParser(),
-		tagParsers:      make(map[string]Parser),
+		LogcatParser:    NewLogcatParser(),
+		TagParsers:      make(map[string]Parser),
 		ErrOnUnknownTag: false,
 	}
 
@@ -37,11 +44,23 @@ func NewLoglineParser() *LoglineParser {
 }
 
 func (pc *LoglineParser) SetParser(tag string, p Parser) {
-	pc.tagParsers[tag] = p
+	pc.TagParsers[tag] = p
 }
 
 func (pc *LoglineParser) ClearParser(tag string) {
-	delete(pc.tagParsers, tag)
+	delete(pc.TagParsers, tag)
+}
+
+func (pc *LoglineParser) AddKnownTags() {
+	pkparser := NewPrintkParser()
+	pkparser.ErrOnUnknownTag = false
+	pc.SetParser(TAG_PRINTK, pkparser)
+
+	tparser := NewKernelTraceParser()
+	tparser.ErrOnUnknownTag = false
+	pc.SetParser(TAG_TRACE, tparser)
+
+	pc.SetParser(TAG_PL_POWER_BATTERY, NewPLPowerBatteryParser())
 }
 
 // For the logline parser, the payload is the whole log line
@@ -49,7 +68,7 @@ func (pc *LoglineParser) Parse(line string) (interface{}, error) {
 
 	var ll *Logline
 
-	if obj, err := pc.logcatParser.Parse(line); err != nil {
+	if obj, err := pc.LogcatParser.Parse(line); err != nil {
 		return obj, err
 	} else {
 		//ll = obj.(*Logline)
@@ -57,7 +76,7 @@ func (pc *LoglineParser) Parse(line string) (interface{}, error) {
 	}
 
 	// Do we have a payload parser?
-	if parser, ok := pc.tagParsers[ll.Tag]; ok {
+	if parser, ok := pc.TagParsers[ll.Tag]; ok {
 		// Yes
 		payload := ll.Payload.(string)
 		if obj, err := parser.Parse(payload); err != nil {

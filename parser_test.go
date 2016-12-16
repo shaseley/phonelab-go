@@ -1,7 +1,9 @@
 package phonelab
 
 import (
+	"bufio"
 	"github.com/stretchr/testify/assert"
+	"os"
 	"testing"
 )
 
@@ -17,6 +19,7 @@ type testStruct struct {
 }
 
 func TestUnpackLogcat(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 
 	ts := testStruct{}
@@ -49,6 +52,7 @@ func TestUnpackLogcat(t *testing.T) {
 }
 
 func TestUnpackLogcatErrors(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 
 	ts := testStruct{}
@@ -73,4 +77,65 @@ func TestUnpackLogcatErrors(t *testing.T) {
 
 	err = UnpackLogcatEntry(&ts, values)
 	assert.NotNil(err)
+}
+
+func TestLoglineParser(t *testing.T) {
+	t.Parallel()
+	assert := assert.New(t)
+
+	parser := NewLoglineParser()
+	parser.AddKnownTags()
+
+	file, err := os.Open("./test/test.10000.log")
+	assert.NotNil(file)
+	assert.Nil(err)
+	if err != nil {
+		t.FailNow()
+	}
+
+	printk, power, thermal, cpu_freq, unknown := 0, 0, 0, 0, 0
+
+	scanner := bufio.NewScanner(file)
+
+	for scanner.Scan() {
+		line := scanner.Text()
+		obj, err := parser.Parse(line)
+
+		// Everyting in the testfile is well formed. Also,
+		// all subparsers are not set to error on unknown lines.
+		assert.NotNil(obj)
+		assert.Nil(err)
+		if err != nil {
+			t.FailNow()
+		}
+
+		log := obj.(*Logline)
+
+		switch log.Payload.(type) {
+		case *PrintkLog:
+			printk += 1
+		case *PLPowerBatteryLog:
+			power += 1
+		case *ThermalTemp:
+			thermal += 1
+		case *CpuFrequency:
+			cpu_freq += 1
+		case string:
+			unknown += 1
+		default:
+			t.Fatalf("Unexpected type: %T", log)
+		}
+	}
+
+	assert.True(printk > 0)
+	assert.True(power > 0)
+	assert.True(thermal > 0)
+	assert.True(cpu_freq > 0)
+	assert.True(unknown > 0)
+
+	t.Log(printk)
+	t.Log(power)
+	t.Log(thermal)
+	t.Log(cpu_freq)
+	t.Log(unknown)
 }
