@@ -1,7 +1,6 @@
 package phonelab
 
 import (
-	"errors"
 	"fmt"
 	"reflect"
 	"regexp"
@@ -182,7 +181,7 @@ func (l *Logline) Less(s gocommons.SortInterface) (ret bool, err error) {
 	var ok bool
 	if s != nil {
 		if o, ok = s.(*Logline); !ok {
-			err = errors.New(fmt.Sprintf("Failed to convert from SortInterface to *Logline:", reflect.TypeOf(s)))
+			err = fmt.Errorf("Failed to convert from SortInterface to *Logline: %v", reflect.TypeOf(s))
 			ret = false
 			goto out
 		}
