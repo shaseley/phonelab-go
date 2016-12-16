@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gurupras/gocommons"
@@ -14,18 +15,19 @@ import (
 )
 
 type Logline struct {
-	Line          string
-	BootId        string
-	Datetime      time.Time
-	DatetimeNanos int64
-	LogcatToken   int64
-	TraceTime     float64
-	Pid           int32
-	Tid           int32
-	Level         string
-	Tag           string
-	Payload       string
-	PayloadObj    interface{}
+	Line          string    `logcat:"-"`
+	BootId        string    `logcat:"boot_id"`
+	Datetime      time.Time `logcat:"-"`
+	DatetimeNanos int64     `logcat:"-"`
+	LogcatToken   int64     `logcat:"LogcatToken"`
+	TraceTime     float64   `logcat:"tracetime"`
+	Pid           int32     `logcat:"pid"`
+	Tid           int32     `logcat:"tid"`
+	Level         string    `logcat:"level"`
+	Tag           string    `logcat:"tag"`
+
+	// This will be a string or object, depending on if it has been parsed.
+	Payload interface{} `logcat:"-"`
 }
 
 type Loglines []*Logline
@@ -59,88 +61,100 @@ var PHONELAB_PATTERN = regexp.MustCompile(`` +
 	`\s+(?P<payload>.*)` +
 	`)`)
 
-// The order can be swapped in case we know the format a priori.
-var allLCPatterns = []*regexp.Regexp{
-	PHONELAB_PATTERN, PATTERN,
+type LogcatParser struct {
+	RegexParser *MultRegexParser
+	Patterns    []*regexp.Regexp
+
+	// Parameters
+	StoreLogline bool
+
+	// Private
+	curPattern   int
+	startPattern int
+	l            sync.Mutex
 }
 
-func ParseLogline(line string) (*Logline, error) {
-	var err error
-	var names []string
-	var values_raw [][]string
+func NewLogcatParser() *LogcatParser {
+	parser := &LogcatParser{
+		Patterns: []*regexp.Regexp{
+			PHONELAB_PATTERN, PATTERN,
+		},
+		curPattern:   0,
+		startPattern: 0,
+		StoreLogline: true,
+	}
+	parser.RegexParser = NewMultRegexParser(parser)
+	return parser
+}
 
-	for _, pattern := range allLCPatterns {
-		names = pattern.SubexpNames()
-		values_raw = pattern.FindAllStringSubmatch(line, -1)
-		if len(values_raw) > 0 {
-			break
-		}
+func (p *LogcatParser) New() interface{} {
+	return &Logline{}
+}
+
+func (p *LogcatParser) Regex() []*regexp.Regexp {
+	return p.Patterns
+}
+
+func (p *LogcatParser) Parse(line string) (*Logline, error) {
+	p.l.Lock()
+	defer p.l.Unlock()
+
+	var logline *Logline = nil
+
+	if obj, err := p.RegexParser.Parse(line); err == nil {
+		logline = obj.(*Logline)
 	}
 
-	if len(values_raw) != 1 {
+	if logline == nil {
 		return nil, fmt.Errorf("Unsupported logcat format or invalid logline")
 	}
 
-	values := values_raw[0]
+	// The RegexParser handles most of the fields, we just need to patch
+	// up the remainder.
 
-	kv_map := map[string]string{}
-	for i, value := range values {
-		kv_map[names[i]] = value
-	}
-
-	// Convert values
 	// Some datetimes are 9 digits instead of 6
 	// TODO: Get rid of the last 3
 
-	datetimeNanos, err := strconv.ParseInt(kv_map["datetime"][20:], 0, 64)
+	// Text line
+	if p.StoreLogline {
+		logline.Line = line
+	}
+
+	// Payload
+	logline.Payload = p.RegexParser.LastMap["payload"]
+
+	// Datetime Nanoseconds
+	if res, err := strconv.ParseInt(p.RegexParser.LastMap["datetime"][20:], 0, 64); err != nil {
+		return nil, err
+	} else {
+		logline.DatetimeNanos = res
+	}
+
+	// Datetime (seconds)
+	dt := p.RegexParser.LastMap["datetime"]
+	if len(dt) > 26 {
+		dt = dt[:26]
+	}
+	if res, err := strptime.Parse(dt, "%Y-%m-%d %H:%M:%S.%f"); err != nil {
+		return nil, err
+	} else {
+		logline.Datetime = res
+	}
+
+	return logline, nil
+}
+
+var legacyParser = NewLogcatParser()
+
+// Legacy
+func ParseLogline(line string) (*Logline, error) {
+	ll, err := legacyParser.Parse(line)
 	if err != nil {
 		return nil, err
+	} else {
+		return ll, nil
+		//return ll.(*Logline), nil
 	}
-
-	if len(kv_map["datetime"]) > 26 {
-		kv_map["datetime"] = kv_map["datetime"][:26]
-	}
-
-	datetime, err := strptime.Parse(kv_map["datetime"], "%Y-%m-%d %H:%M:%S.%f")
-	if err != nil {
-		return nil, err
-	}
-
-	token, err := strconv.ParseInt(kv_map["LogcatToken"], 0, 64)
-	if err != nil {
-		return nil, err
-	}
-
-	tracetime, err := strconv.ParseFloat(kv_map["tracetime"], 64)
-	if err != nil {
-		return nil, err
-	}
-
-	pid, err := strconv.ParseInt(kv_map["pid"], 0, 32)
-	if err != nil {
-		return nil, err
-	}
-
-	tid, err := strconv.ParseInt(kv_map["tid"], 0, 32)
-	if err != nil {
-		return nil, err
-	}
-
-	ll := &Logline{
-		Line:          line,
-		BootId:        kv_map["boot_id"],
-		Datetime:      datetime,
-		DatetimeNanos: datetimeNanos,
-		LogcatToken:   token,
-		TraceTime:     tracetime,
-		Pid:           int32(pid),
-		Tid:           int32(tid),
-		Level:         kv_map["level"],
-		Tag:           kv_map["tag"],
-		Payload:       kv_map["payload"],
-	}
-
-	return ll, nil
 }
 
 // TODO: Should this move?

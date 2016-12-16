@@ -20,7 +20,19 @@ type ParserController interface {
 }
 
 type LoglineParser struct {
-	tagParsers map[string]Parser
+	logcatParser    *LogcatParser
+	tagParsers      map[string]Parser
+	ErrOnUnknownTag bool
+}
+
+func NewLoglineParser() *LoglineParser {
+	parser := &LoglineParser{
+		logcatParser:    NewLogcatParser(),
+		tagParsers:      make(map[string]Parser),
+		ErrOnUnknownTag: false,
+	}
+
+	return parser
 }
 
 func (pc *LoglineParser) SetParser(tag string, p Parser) {
@@ -32,17 +44,30 @@ func (pc *LoglineParser) ClearParser(tag string) {
 }
 
 // For the logline parser, the payload is the whole log line
-func (pc *LoglineParser) Parse(line string) (*Logline, error) {
-	ll, err := ParseLogline(line)
-	if err != nil {
-		return ll, err
+func (pc *LoglineParser) Parse(line string) (interface{}, error) {
+
+	var ll *Logline
+
+	if obj, err := pc.logcatParser.Parse(line); err != nil {
+		return obj, err
+	} else {
+		//ll = obj.(*Logline)
+		ll = obj
 	}
 
+	// Do we have a payload parser?
 	if parser, ok := pc.tagParsers[ll.Tag]; ok {
-		// We have a payload parser
-		obj, err := parser.Parse(ll.Payload)
-		ll.PayloadObj = obj
-		return ll, err
+		// Yes
+		payload := ll.Payload.(string)
+		if obj, err := parser.Parse(payload); err != nil {
+			return ll, err
+		} else {
+			ll.Payload = obj
+			return ll, nil
+		}
+	} else if pc.ErrOnUnknownTag {
+		// No, and we should
+		return nil, fmt.Errorf("No tag parser for tag '%v'", ll.Tag)
 	} else {
 		// No subparser, just return the logline with the unparsed payload.
 		return ll, nil
@@ -176,4 +201,56 @@ func (p *RegexParser) Parse(line string) (interface{}, error) {
 	m, err := unpackFromRegex(line, p.Props.Regex(), obj)
 	p.LastMap = m
 	return obj, err
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// A parser that handles multiple regexes
+
+type MultRegexParserProps interface {
+	// Create a new default object to populate. The result must be a pointer.
+	New() interface{}
+
+	// The regex to use to populate the object.
+	Regex() []*regexp.Regexp
+}
+
+type MultRegexParser struct {
+	Props        MultRegexParserProps
+	LastMap      map[string]string
+	startPattern int
+}
+
+func NewMultRegexParser(props MultRegexParserProps) *MultRegexParser {
+	return &MultRegexParser{
+		Props:        props,
+		startPattern: 0,
+	}
+}
+
+func (p *MultRegexParser) Parse(line string) (interface{}, error) {
+
+	var err error
+	var m map[string]string
+	// Assuming this parser is reused for a long stream, and all of the logs
+	// within the same stream have the same format, this will learn the format
+	// after one log. This has a huge performance benefit, and safes the developer
+	// the burden of reordering the patterns.
+	i := p.startPattern
+	patterns := p.Props.Regex()
+
+	for {
+		obj := p.Props.New()
+		if m, err = unpackFromRegex(line, patterns[i], obj); err == nil {
+			p.startPattern = i
+			p.LastMap = m
+			return obj, err
+		}
+
+		// Advance and wrap, checking if we're back at the start
+		if i = (i + 1) % len(patterns); i == p.startPattern {
+			break
+		}
+	}
+
+	return nil, err
 }

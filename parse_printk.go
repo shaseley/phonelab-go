@@ -2,9 +2,7 @@ package phonelab
 
 import (
 	"fmt"
-	"os"
 	"regexp"
-	"strconv"
 	"strings"
 	"time"
 
@@ -25,21 +23,155 @@ const (
 	PM_SUSPEND_EXIT
 )
 
-/* Printk pattern example: <6>[   21.512807] msm_thermal: Allow Online CPU3 Temp: 66 */
-var PRINTK_PATTERN_STRING = `(<(?P<loglevel>\d+)>)?\s*\[\s*(?P<timestamp>\d+\.\d+)\]\s*`
+///////////////////////////////////////////////////////////////////////////////
+// Printk common parser
+
+// Printk pattern example: <6>[   21.512807] msm_thermal: Allow Online CPU3 Temp: 66
+// Unfortunately, there's no set pattern in the payload for identifying the
+// subparser. Some start with <tag>:, but not every message. We'll use a prefix
+// approach for looking up these messages.
+var PRINTK_PATTERN_STRING = `^` +
+	`\s*<(?P<loglevel>\d+)>?` +
+	`\s*\[\s*(?P<timestamp>\d+\.\d+)\]` +
+	`\s*(?P<payload>.*)$`
+
+// 12,1547,5703232,-;healthd: battery [l=19 v=4020 t=32.1 h=2 st=2] c=1757 chg=a 1970-05-31 01:42:28.105726458 UTC
+var PRINTK_PATTERN_STRING_NEW = `^` +
+	`\s*(?P<loglevel>\d+),` +
+	`(?P<sequence>\d+),` +
+	`(?P<timestamp_us>\d+),` +
+	`.;` +
+	`(?P<payload>.*)$`
+
+type PrintkLog struct {
+	LogLevel    int
+	Timestamp   float64 `logcat:"timestamp"`
+	TimestampUs int64   `logcat:"timestamp_us"`
+	Sequence    int64   `logcat:"sequence"`
+}
+
+type PrintkSubmessage interface {
+	GetPrintk() *PrintkLog
+	SetPrintk(log *PrintkLog)
+}
+
+type PrintkSubparser struct {
+	Prefix string
+	Parser
+}
+
+type PrintkParser struct {
+	RegexParser *MultRegexParser
+	Subparsers  []*PrintkSubparser
+
+	re []*regexp.Regexp
+
+	// Parameters
+	ErrOnUnknownTag bool
+}
+
+func NewPrintkParser() *PrintkParser {
+	parser := &PrintkParser{
+		Subparsers: []*PrintkSubparser{
+			&PrintkSubparser{
+				"msm_thermal:",
+				NewMsmThermalParser(),
+			},
+			&PrintkSubparser{
+				"PM: suspend ",
+				NewPMManagementParser(),
+			},
+			&PrintkSubparser{
+				"healthd:",
+				NewHealthdParser(),
+			},
+			&PrintkSubparser{
+				"acpuclk-8974 qcom,acpuclk.30: ACPU PVS:",
+				NewPvsBinParser(),
+			},
+		},
+		re: []*regexp.Regexp{
+			regexp.MustCompile(PRINTK_PATTERN_STRING),
+			regexp.MustCompile(PRINTK_PATTERN_STRING_NEW),
+		},
+		ErrOnUnknownTag: true,
+	}
+	parser.RegexParser = NewMultRegexParser(parser)
+	return parser
+}
+
+func (p *PrintkParser) New() interface{} {
+	return &PrintkLog{}
+}
+
+func (p *PrintkParser) Regex() []*regexp.Regexp {
+	return p.re
+}
+
+func (p *PrintkParser) Parse(line string) (interface{}, error) {
+	var printk *PrintkLog
+
+	// Parse using regex parser
+	if obj, err := p.RegexParser.Parse(line); err != nil {
+		return nil, err
+	} else {
+		printk = obj.(*PrintkLog)
+	}
+
+	payload := p.RegexParser.LastMap["payload"]
+
+	// Find the parser by prefix
+	var parser Parser = nil
+	for _, pkp := range p.Subparsers {
+		if strings.HasPrefix(payload, pkp.Prefix) {
+			parser = pkp.Parser
+			break
+		}
+	}
+
+	// Timestamp (new)
+	if printk.TimestampUs > 0 {
+		printk.Timestamp = float64(printk.TimestampUs) / float64(1000000)
+	}
+
+	if parser == nil {
+		if p.ErrOnUnknownTag {
+			return nil, fmt.Errorf("No parser defined for printk payload: '%v'", payload)
+		} else {
+			return printk, nil
+		}
+	}
+
+	if obj, err := parser.Parse(payload); err != nil {
+		return nil, err
+	} else {
+		log := obj.(PrintkSubmessage)
+		log.SetPrintk(printk)
+		return log, err
+	}
+
+}
 
 ///////////////////////////////////////////////////////////////////////////////
 // MSM thermal printk messages (temperature)
 
-var MSM_THERMAL_PRINTK_PATTERN = regexp.MustCompile(PRINTK_PATTERN_STRING +
-	`\s*msm_thermal: (?P<state>(Set Offline:|Allow Online)) CPU(?P<cpu>\d+) Temp: (?P<temp>\d+)`)
+var MSM_THERMAL_PRINTK_PATTERN = regexp.MustCompile(`` +
+	`^\s*msm_thermal: (?P<state>(Set Offline:|Allow Online)) CPU(?P<cpu>\d+) Temp: (?P<temp>\d+)$`)
 
 type MsmThermalPrintk struct {
-	Logline  *Logline        `logcat:"-"`
-	StateStr string          `logcat:"state"`
-	State    MsmThermalState `logcat:"-"`
-	Cpu      int             `logcat:"cpu"`
-	Temp     int             `logcat:"temp"`
+	PrintkLog `logcat:"-"`
+	StateStr  string          `logcat:"state"`
+	State     MsmThermalState `logcat:"-"`
+	Cpu       int             `logcat:"cpu"`
+	Temp      int             `logcat:"temp"`
+}
+
+func (log *MsmThermalPrintk) GetPrintk() *PrintkLog {
+	return &log.PrintkLog
+}
+
+func (log *MsmThermalPrintk) SetPrintk(pk *PrintkLog) {
+	log.PrintkLog = *pk
 }
 
 type MsmThermalParser struct {
@@ -61,9 +193,6 @@ func (p *MsmThermalParser) Parse(line string) (interface{}, error) {
 		mtp = obj.(*MsmThermalPrintk)
 	}
 
-	// TODO: fix
-	// mtp.Logline = logline
-
 	// Set state
 	if strings.Compare(mtp.StateStr, "Set Offline:") == 0 {
 		mtp.State = MSM_THERMAL_STATE_OFFLINE
@@ -84,17 +213,6 @@ func (p *MsmThermalParser) Regex() *regexp.Regexp {
 	return MSM_THERMAL_PRINTK_PATTERN
 }
 
-func ParseMsmThermalPrintk(logline *Logline) *MsmThermalPrintk {
-	parser := NewMsmThermalParser()
-	if obj, err := parser.Parse(logline.Payload); err != nil {
-		return nil
-	} else {
-		mtp := obj.(*MsmThermalPrintk)
-		mtp.Logline = logline
-		return mtp
-	}
-}
-
 ///////////////////////////////////////////////////////////////////////////////
 // PowerManger Suspend entry and exit
 
@@ -103,13 +221,24 @@ func ParseMsmThermalPrintk(logline *Logline) *MsmThermalPrintk {
 <6>[93341.915138] PM: suspend entry 2016-04-27 04:00:00.448241184 UTC
 */
 
-var POWER_MANAGEMENT_PRINTK_PATTERN = regexp.MustCompile(PRINTK_PATTERN_STRING +
-	`\s*PM: suspend (?P<state>entry|exit) (?P<datetime>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}.\d+) (?P<timezone>\S+)`)
+var POWER_MANAGEMENT_PRINTK_PATTERN = regexp.MustCompile(`^` +
+	`\s*PM: suspend (?P<state>entry|exit)` +
+	`\s+(?P<datetime>\d{4}-\d{2}-\d{2}` +
+	`\s+\d{2}:\d{2}:\d{2}.\d+)` +
+	`\s+(?P<timezone>\S+)$`)
 
 type PowerManagementPrintk struct {
-	Logline  *Logline             `logcat:"-"`
-	State    PowerManagementState `logcat:"-"`
-	Datetime time.Time            `logcat:"-"`
+	PrintkLog `logcat:"-"`
+	State     PowerManagementState `logcat:"-"`
+	Datetime  time.Time            `logcat:"-"`
+}
+
+func (log *PowerManagementPrintk) GetPrintk() *PrintkLog {
+	return &log.PrintkLog
+}
+
+func (log *PowerManagementPrintk) SetPrintk(pk *PrintkLog) {
+	log.PrintkLog = *pk
 }
 
 type PMManagementParser struct {
@@ -141,9 +270,6 @@ func (p *PMManagementParser) Parse(line string) (interface{}, error) {
 
 	m := p.RegexParser.LastMap
 
-	// TODO: Fix
-	//pmp.Logline = logline
-
 	if strings.Compare(m["state"], "entry") == 0 {
 		pmp.State = PM_SUSPEND_ENTRY
 	} else if strings.Compare(m["state"], "exit") == 0 {
@@ -161,34 +287,39 @@ func (p *PMManagementParser) Parse(line string) (interface{}, error) {
 	return pmp, nil
 }
 
-func ParsePowerManagementPrintk(logline *Logline) *PowerManagementPrintk {
-	parser := NewPMManagementParser()
-	if obj, err := parser.Parse(logline.Payload); err != nil {
-		return nil
-	} else {
-		pmp := obj.(*PowerManagementPrintk)
-		pmp.Logline = logline
-		return pmp
-	}
-}
-
 ///////////////////////////////////////////////////////////////////////////////
 // Healthd logs (battery stats)
 
-var HEALTHD_PATTERN = regexp.MustCompile(`` +
-	PRINTK_PATTERN_STRING +
-	`healthd:\s*battery\s*l=(?P<l>\d+)\s+v=(?P<v>\d+)\s+t=(?P<t>\d+\.\d+)\s+h=(?P<h>-?\d+)\s+st=(?P<st>-?\d+)\s+c=(?P<c>-?\d+)\s+chg=(?P<chg>([auw]+)?)\s*`)
+// New and old pattern
+// TODO: Add ending timestamp
+var HEALTHD_PATTERN = regexp.MustCompile(`^` +
+	`healthd:\s*battery` +
+	`\s*\[?l=(?P<l>\d+)` +
+	`\s+v=(?P<v>\d+)` +
+	`\s+t=(?P<t>\d+\.\d+)` +
+	`\s+h=(?P<h>-?\d+)\s+` +
+	`st=(?P<st>-?\d+)\]?` +
+	`\s+c=(?P<c>-?\d+)` +
+	`\s+chg=(?P<chg>([auw]+)?)` +
+	`.*$`)
 
 type Healthd struct {
-	Logline   *Logline `logcat:"-"`
-	Timestamp float64  `logcat:"timestamp"`
-	L         int      `logcat:"l"`
-	V         int      `logcat:"v"`
-	T         float64  `logcat:"t"`
-	H         int      `logcat:"h"`
-	St        int      `logcat:"st"`
-	C         int      `logcat:"c"`
-	Chg       string   `logcat:"chg"`
+	PrintkLog `logcat:"-"`
+	L         int     `logcat:"l"`
+	V         int     `logcat:"v"`
+	T         float64 `logcat:"t"`
+	H         int     `logcat:"h"`
+	St        int     `logcat:"st"`
+	C         int     `logcat:"c"`
+	Chg       string  `logcat:"chg"`
+}
+
+func (log *Healthd) GetPrintk() *PrintkLog {
+	return &log.PrintkLog
+}
+
+func (log *Healthd) SetPrintk(pk *PrintkLog) {
+	log.PrintkLog = *pk
 }
 
 type HealthdParser struct {
@@ -202,7 +333,7 @@ func NewHealthdParser() *HealthdParser {
 }
 
 func (p *HealthdParser) New() interface{} {
-	return &MsmThermalPrintk{}
+	return &Healthd{}
 }
 
 func (p *HealthdParser) Regex() *regexp.Regexp {
@@ -211,57 +342,48 @@ func (p *HealthdParser) Regex() *regexp.Regexp {
 
 func (p *HealthdParser) Parse(line string) (interface{}, error) {
 	// Currently, this just wraps the regex parser
-	// TODO: Fix
-	//pmp.Logline = logline
 	return p.RegexParser.Parse(line)
 }
 
-// Legacy
-func ParseHealthdPrintk(logline *Logline) *Healthd {
-	parser := NewHealthdParser()
-	if obj, err := parser.Parse(logline.Payload); err != nil {
-		return nil
-	} else {
-		hd := obj.(*Healthd)
-		hd.Logline = logline
-		return hd
-	}
-}
-
 ///////////////////////////////////////////////////////////////////////////////
-// Healthd logs (battery stats)
+// PVS Bin
 
-var PVS_BIN_PATTERN = regexp.MustCompile(`` +
-	PRINTK_PATTERN_STRING +
-	`acpuclk-8974 qcom,acpuclk.30: ACPU PVS: (?P<pvs_bin>\d+)`)
+// TODO: Nexus 6
+var PVS_BIN_PATTERN = regexp.MustCompile(`^` +
+	`acpuclk-8974 qcom,acpuclk.30: ACPU PVS: (?P<pvs_bin>\d+)$`)
 
 type PvsBin struct {
-	Logline   *Logline
-	Timestamp float64
-	PvsBin    int
+	PrintkLog `logcat:"-"`
+	PvsBin    int `logcat:"pvs_bin"`
 }
 
-func ParsePvsBin(logline *Logline) *PvsBin {
-	names := PVS_BIN_PATTERN.SubexpNames()
-	values_raw := PVS_BIN_PATTERN.FindAllStringSubmatch(logline.Payload, -1)
-	if len(values_raw) == 0 {
-		fmt.Fprintln(os.Stderr, "Failed to parse:", logline.Line)
-		os.Exit(-1)
-	}
-	values := values_raw[0]
+func (log *PvsBin) GetPrintk() *PrintkLog {
+	return &log.PrintkLog
+}
 
-	kv_map := map[string]string{}
-	for i, value := range values {
-		kv_map[names[i]] = value
-	}
-	timestamp, err := strconv.ParseFloat(kv_map["timestamp"], 64)
-	if err != nil {
-		return nil
-	}
-	pvsBin, err := strconv.ParseInt(kv_map["pvs_bin"], 0, 32)
-	if err != nil {
-		return nil
-	}
-	obj := PvsBin{logline, timestamp, int(pvsBin)}
-	return &obj
+func (log *PvsBin) SetPrintk(pk *PrintkLog) {
+	log.PrintkLog = *pk
+}
+
+type PvsBinParser struct {
+	RegexParser *RegexParser
+}
+
+func NewPvsBinParser() *PvsBinParser {
+	parser := &PvsBinParser{}
+	parser.RegexParser = NewRegexParser(parser)
+	return parser
+}
+
+func (p *PvsBinParser) New() interface{} {
+	return &PvsBin{}
+}
+
+func (p *PvsBinParser) Regex() *regexp.Regexp {
+	return PVS_BIN_PATTERN
+}
+
+func (p *PvsBinParser) Parse(line string) (interface{}, error) {
+	// Currently, this just wraps the regex parser
+	return p.RegexParser.Parse(line)
 }

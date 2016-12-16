@@ -41,7 +41,7 @@ func commonTestParse(allconf []*parseComparison, t *testing.T) {
 			fail("Unexpected nil logline", conf)
 		}
 
-		obj, err := conf.parser.Parse(logline.Payload)
+		obj, err := conf.parser.Parse(logline.Payload.(string))
 
 		// Is this supposed to fail?
 		if conf.subParseFails {

@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
-	"time"
 )
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -27,14 +26,15 @@ var TRACE_PATTERN = regexp.MustCompile(`` +
 	`\s+(?P<text>.*)` +
 	`)`)
 
+//TODO: What about the commented fields?
 type Trace struct {
-	Thread    string    `logcat:"thread"`
-	Cpu       int       `logcat:"cpu"`
-	Unknown   string    `logcat:"unknown"`
-	Timestamp float64   `logcat:"timestamp"`
-	Tag       string    `logcat:"tag"`
-	Datetime  time.Time `logcat:"-"`
-	Logline   *Logline  `logcat:"-"`
+	Thread    string  `logcat:"thread"`
+	Cpu       int     `logcat:"cpu"`
+	Unknown   string  `logcat:"unknown"`
+	Timestamp float64 `logcat:"timestamp"`
+	Tag       string  `logcat:"tag"`
+	//Datetime  time.Time `logcat:"-"`
+	//Logline   *Logline  `logcat:"-"`
 }
 
 type KernelTraceParser struct {
@@ -416,31 +416,7 @@ func (s *PeriodicCtxSwitchMarkerParser) Regex() *regexp.Regexp {
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-// Legacy
-
-func ParseTraceFromLoglinePayload(logline *Logline) TraceInterface {
-	if logline == nil {
-		return nil
-	}
-
-	obj, err := TraceParser.Parse(logline.Payload)
-	if err != nil {
-		return nil
-	}
-
-	trace := obj.(TraceInterface)
-
-	// This one doesn't come from the payload
-	trace.GetTrace().Datetime = logline.Datetime
-
-	// Uncomment this line if you want to add Logline information
-	// Or add it manually where required
-	//trace.Logline = logline
-
-	return trace
-}
-
-///////////////////////////////////////////////////////////////////////////////
+// TODO: Should this move?
 
 type PeriodicCtxSwitchInfo struct {
 	Start *PhonelabPeriodicCtxSwitchMarker

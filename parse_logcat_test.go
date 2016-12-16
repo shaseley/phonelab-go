@@ -13,6 +13,7 @@ import (
 )
 
 func TestCheckLogcatPattern(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 
 	line := "6b793913-7cd9-477a-bbfa-62f07fbac87b 2016-04-21 09:59:01.199025638 11553177 [29981.752359]   202   203 D Kernel-Trace:      kworker/1:1-21588 [001] ...2 29981.751893: phonelab_periodic_ctx_switch_info: cpu=1 pid=7641 tgid=7613 nice=0 comm=Binder_1 utime=0 stime=0 rtime=158906 bg_utime=0 bg_stime=0 bg_rtime=0 s_run=0 s_int=2 s_unint=0 s_oth=0 log_idx=79981"
@@ -36,6 +37,8 @@ func TestCheckLogcatPattern(t *testing.T) {
 }
 
 func TestCheckLogcatSort(t *testing.T) {
+	t.Parallel()
+
 	var infile_raw *gocommons.File
 	var err error
 	var reader *bufio.Scanner
@@ -84,6 +87,7 @@ func TestCheckLogcatSort(t *testing.T) {
 }
 
 func TestParseLoglineConvert(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 
 	line := "6b793913-7cd9-477a-bbfa-62f07fbac87b 2016-04-21 09:59:01.199025638 11553177 [29981.752359]   202   203 D Kernel-Trace:      kworker/1:1-21588 [001] ...2 29981.751893: phonelab_periodic_ctx_switch_info: cpu=1 pid=7641 tgid=7613 nice=0 comm=Binder_1 utime=0 stime=0 rtime=158906 bg_utime=0 bg_stime=0 bg_rtime=0 s_run=0 s_int=2 s_unint=0 s_oth=0 log_idx=79981"
@@ -98,6 +102,7 @@ func TestParseLoglineConvert(t *testing.T) {
 }
 
 func TestLoglineString(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 
 	line := "6b793913-7cd9-477a-bbfa-62f07fbac87b 2016-04-21 09:59:01.199025638 11553177 [29981.752359]   202   203 D Kernel-Trace:      kworker/1:1-21588 [001] ...2 29981.751893: phonelab_periodic_ctx_switch_info: cpu=1 pid=7641 tgid=7613 nice=0 comm=Binder_1 utime=0 stime=0 rtime=158906 bg_utime=0 bg_stime=0 bg_rtime=0 s_run=0 s_int=2 s_unint=0 s_oth=0 log_idx=79981"
