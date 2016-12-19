@@ -1,4 +1,4 @@
-package phonelab
+package parsers
 
 import (
 	"bufio"
