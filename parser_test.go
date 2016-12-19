@@ -139,3 +139,59 @@ func TestLoglineParser(t *testing.T) {
 	t.Log(cpu_freq)
 	t.Log(unknown)
 }
+
+func TestLoglineParserSingleTag(t *testing.T) {
+	t.Parallel()
+	assert := assert.New(t)
+
+	parser := NewLoglineParser()
+
+	// We'll only add a printk parser that doesn't know how to
+	// parse any payloads, but doesn't error.
+	pkParser := NewPrintkParser()
+	pkParser.ErrOnUnknownTag = false
+	pkParser.Subparsers = make([]*PrintkSubparser, 0)
+
+	parser.SetParser("KernelPrintk", pkParser)
+
+	file, err := os.Open("./test/test.10000.log")
+	assert.NotNil(file)
+	assert.Nil(err)
+	if err != nil {
+		t.FailNow()
+	}
+
+	printk, unknown := 0, 0
+
+	scanner := bufio.NewScanner(file)
+
+	for scanner.Scan() {
+		line := scanner.Text()
+		obj, err := parser.Parse(line)
+
+		// Everyting in the testfile is well formed. Also,
+		// all subparsers are not set to error on unknown lines.
+		assert.NotNil(obj)
+		assert.Nil(err)
+		if err != nil {
+			t.FailNow()
+		}
+
+		log := obj.(*Logline)
+
+		switch log.Payload.(type) {
+		case *PrintkLog:
+			printk += 1
+		case string:
+			unknown += 1
+		default:
+			t.Fatalf("Unexpected type: %T", log)
+		}
+	}
+
+	assert.True(printk > 0)
+	assert.True(unknown > 0)
+
+	t.Log(printk)
+	t.Log(unknown)
+}
