@@ -1,6 +1,8 @@
 package phonelab
 
 import (
+	"github.com/stretchr/testify/assert"
+	"reflect"
 	"testing"
 )
 
@@ -334,4 +336,15 @@ func TestParsePhonelabPeriodicCtxSwitchMarker(t *testing.T) {
 
 	commonTestParse(testConf, t)
 
+}
+
+func TestSetTrace(t *testing.T) {
+	assert := assert.New(t)
+
+	expected := &Trace{Thread: "kworker/0:3-2658", Cpu: 0, Unknown: "...1", Timestamp: float64(1932.849097), Tag: "sched_cpu_hotplug"}
+	log := &PhonelabNumOnlineCpus{}
+	setTrace(log, expected)
+
+	assert.True(reflect.DeepEqual(expected, &log.Trace))
+	t.Log(log)
 }

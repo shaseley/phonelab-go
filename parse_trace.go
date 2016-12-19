@@ -2,6 +2,7 @@ package phonelab
 
 import (
 	"fmt"
+	"reflect"
 	"regexp"
 	"strings"
 )
@@ -12,8 +13,6 @@ import (
 // Everything that the KernelTraceParser parses implements this interface
 type TraceInterface interface {
 	Tag() string
-	GetTrace() *Trace
-	SetTrace(trace *Trace)
 }
 
 var TRACE_PATTERN = regexp.MustCompile(`` +
@@ -71,6 +70,24 @@ func (p *KernelTraceParser) Regex() *regexp.Regexp {
 	return TRACE_PATTERN
 }
 
+// Set the trace field of an object with an embedded Trace object.
+// Panics if the log object isn't a Trace object
+func setTrace(log interface{}, trace *Trace) {
+	val := reflect.ValueOf(log)
+	if val.Kind() != reflect.Ptr {
+		panic(fmt.Sprintf("Expected a ptr type, but got '%v'", val.Kind()))
+	}
+
+	elem := val.Elem()
+
+	// This panics of it can't find Trace
+	traceField := elem.FieldByName("Trace")
+
+	// Get the value of the source
+	valDest := reflect.ValueOf(trace).Elem()
+	traceField.Set(valDest)
+}
+
 func (p *KernelTraceParser) Parse(line string) (interface{}, error) {
 
 	var trace *Trace
@@ -103,9 +120,8 @@ func (p *KernelTraceParser) Parse(line string) (interface{}, error) {
 	if obj, err := parser.Parse(p.RegexParser.LastMap["text"]); err != nil {
 		return nil, err
 	} else {
-		ti := obj.(TraceInterface)
-		ti.SetTrace(trace)
-		return ti, err
+		setTrace(obj, trace)
+		return obj, err
 	}
 }
 
@@ -122,7 +138,7 @@ var SCHED_CPU_HOTPLUG_PATTERN = regexp.MustCompile(`` +
 	`\s+error=(?P<error>-?\d+)`)
 
 type SchedCpuHotplug struct {
-	Trace *Trace `logcat:"-"`
+	Trace `logcat:"-"`
 	Cpu   int    `logcat:"cpu"`
 	State string `logcat:"state"`
 	Error int    `logcat:"error"`
@@ -130,14 +146,6 @@ type SchedCpuHotplug struct {
 
 func (t *SchedCpuHotplug) Tag() string {
 	return t.Trace.Tag
-}
-
-func (t *SchedCpuHotplug) GetTrace() *Trace {
-	return t.Trace
-}
-
-func (t *SchedCpuHotplug) SetTrace(trace *Trace) {
-	t.Trace = trace
 }
 
 type SchedCPUHotplugParser struct {
@@ -160,21 +168,13 @@ var THERMAL_TEMP_PATTERN = regexp.MustCompile(`` +
 	`\s+temp=(?P<temp>\d+).*`)
 
 type ThermalTemp struct {
-	Trace    *Trace `logcat:"-"`
-	SensorId int    `logcat:"sensor_id"`
-	Temp     int    `logcat:"temp"`
+	Trace    `logcat:"-"`
+	SensorId int `logcat:"sensor_id"`
+	Temp     int `logcat:"temp"`
 }
 
 func (t *ThermalTemp) Tag() string {
 	return t.Trace.Tag
-}
-
-func (t *ThermalTemp) GetTrace() *Trace {
-	return t.Trace
-}
-
-func (t *ThermalTemp) SetTrace(trace *Trace) {
-	t.Trace = trace
 }
 
 type ThermalTempParser struct {
@@ -197,21 +197,13 @@ var CPU_FREQUENCY_PATTERN = regexp.MustCompile(`` +
 	`\s+cpu_id=(?P<cpu_id>\d+)`)
 
 type CpuFrequency struct {
-	Trace *Trace `logcat:"-"`
-	State int    `logcat:"state"`
-	CpuId int    `logcat:"cpu_id"`
+	Trace `logcat:"-"`
+	State int `logcat:"state"`
+	CpuId int `logcat:"cpu_id"`
 }
 
 func (cf *CpuFrequency) Tag() string {
 	return cf.Trace.Tag
-}
-
-func (t *CpuFrequency) GetTrace() *Trace {
-	return t.Trace
-}
-
-func (t *CpuFrequency) SetTrace(trace *Trace) {
-	t.Trace = trace
 }
 
 type CpuFrequencyParser struct {
@@ -233,20 +225,12 @@ var PHONELAB_NUM_ONLINE_CPUS_PATTERN = regexp.MustCompile(`` +
 	`\s*num_online_cpus=(?P<num_online_cpus>\d+)`)
 
 type PhonelabNumOnlineCpus struct {
-	Trace         *Trace `logcat:"-"`
-	NumOnlineCpus int    `logcat:"num_online_cpus"`
+	Trace         `logcat:"-"`
+	NumOnlineCpus int `logcat:"num_online_cpus"`
 }
 
 func (ti *PhonelabNumOnlineCpus) Tag() string {
 	return ti.Trace.Tag
-}
-
-func (t *PhonelabNumOnlineCpus) GetTrace() *Trace {
-	return t.Trace
-}
-
-func (t *PhonelabNumOnlineCpus) SetTrace(trace *Trace) {
-	t.Trace = trace
 }
 
 type NumOnlineCpusParser struct {
@@ -268,7 +252,7 @@ var PHONELAB_PROC_FOREGROUND_PATTERN = regexp.MustCompile(`` +
 	`\s*pid=(?P<pid>\d+) tgid=(?P<tgid>\d+) comm=(?P<comm>\S+)`)
 
 type PhonelabProcForeground struct {
-	Trace *Trace `logcat:"-"`
+	Trace `logcat:"-"`
 	Pid   int    `logcat:"pid"`
 	Tgid  int    `logcat:"tgid"`
 	Comm  string `logcat:"comm"`
@@ -276,14 +260,6 @@ type PhonelabProcForeground struct {
 
 func (ti *PhonelabProcForeground) Tag() string {
 	return ti.Trace.Tag
-}
-
-func (t *PhonelabProcForeground) GetTrace() *Trace {
-	return t.Trace
-}
-
-func (t *PhonelabProcForeground) SetTrace(trace *Trace) {
-	t.Trace = trace
 }
 
 type ProcForegroundParser struct {
@@ -324,7 +300,7 @@ var PHONELAB_PERIODIC_CTX_SWITCH_INFO_PATTERN = regexp.MustCompile(`` +
 	`)?`)
 
 type PhonelabPeriodicCtxSwitchInfo struct {
-	Trace   *Trace `logcat:"-"`
+	Trace   `logcat:"-"`
 	Cpu     int    `logcat:"cpu"`
 	Pid     int    `logcat:"pid"`
 	Tgid    int    `logcat:"tgid"`
@@ -347,14 +323,6 @@ type PhonelabPeriodicCtxSwitchInfo struct {
 
 func (ti *PhonelabPeriodicCtxSwitchInfo) Tag() string {
 	return ti.Trace.Tag
-}
-
-func (t *PhonelabPeriodicCtxSwitchInfo) GetTrace() *Trace {
-	return t.Trace
-}
-
-func (t *PhonelabPeriodicCtxSwitchInfo) SetTrace(trace *Trace) {
-	t.Trace = trace
 }
 
 type PeriodicCtxSwitchInfoParser struct {
@@ -385,7 +353,7 @@ const (
 )
 
 type PhonelabPeriodicCtxSwitchMarker struct {
-	Trace  *Trace     `logcat:"-"`
+	Trace  `logcat:"-"`
 	State  PPCSMState `logcat:"state"`
 	Cpu    int        `logcat:"cpu"`
 	Count  int        `logcat:"count"`
@@ -394,14 +362,6 @@ type PhonelabPeriodicCtxSwitchMarker struct {
 
 func (ti *PhonelabPeriodicCtxSwitchMarker) Tag() string {
 	return ti.Trace.Tag
-}
-
-func (t *PhonelabPeriodicCtxSwitchMarker) GetTrace() *Trace {
-	return t.Trace
-}
-
-func (t *PhonelabPeriodicCtxSwitchMarker) SetTrace(trace *Trace) {
-	t.Trace = trace
 }
 
 type PeriodicCtxSwitchMarkerParser struct {
