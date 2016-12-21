@@ -155,5 +155,4 @@ func (dm *Demuxer) Process() <-chan interface{} {
 	}()
 
 	return outChan
-
 }
