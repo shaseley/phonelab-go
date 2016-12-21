@@ -45,13 +45,13 @@ func TestCheckLogcatSort(t *testing.T) {
 
 	assert := assert.New(t)
 
-	if infile_raw, err = gocommons.Open("./test/test.log", os.O_RDONLY, gocommons.GZ_FALSE); err != nil {
-		fmt.Fprintln(os.Stderr, "Failed to open:", "./test/test.log", ":", err)
+	if infile_raw, err = gocommons.Open("../test/test.log", os.O_RDONLY, gocommons.GZ_FALSE); err != nil {
+		fmt.Fprintln(os.Stderr, "Failed to open:", "../test/test.log", ":", err)
 		return
 	}
 	defer infile_raw.Close()
 	if reader, err = infile_raw.Reader(0); err != nil {
-		fmt.Fprintln(os.Stderr, "Could not get reader:", "./test/test.log")
+		fmt.Fprintln(os.Stderr, "Could not get reader:", "../test/test.log")
 		return
 	}
 

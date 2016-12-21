@@ -86,7 +86,7 @@ func TestLoglineParser(t *testing.T) {
 	parser := NewLoglineParser()
 	parser.AddKnownTags()
 
-	file, err := os.Open("./test/test.10000.log")
+	file, err := os.Open("../test/test.10000.log")
 	assert.NotNil(file)
 	assert.Nil(err)
 	if err != nil {
@@ -154,7 +154,7 @@ func TestLoglineParserSingleTag(t *testing.T) {
 
 	parser.SetParser("KernelPrintk", pkParser)
 
-	file, err := os.Open("./test/test.10000.log")
+	file, err := os.Open("../test/test.10000.log")
 	assert.NotNil(file)
 	assert.Nil(err)
 	if err != nil {
