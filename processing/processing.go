@@ -7,6 +7,7 @@ package processing
 // log sources.
 
 import (
+	"fmt"
 	"sync"
 )
 
@@ -29,32 +30,32 @@ type LogHandler interface {
 // If the LogHandler returns a non-nil value, this value will be written on the
 // output channel.
 type SimpleProcessor struct {
-	handler LogHandler
-	source  Processor
+	Handler LogHandler
+	Source  Processor
 }
 
 // Create a new SimpleOperator with a single source and handler
-func NewSimpleOperator(source Processor, handler LogHandler) *SimpleProcessor {
+func NewSimpleProcessor(source Processor, handler LogHandler) *SimpleProcessor {
 	return &SimpleProcessor{
-		handler: handler,
-		source:  source,
+		Handler: handler,
+		Source:  source,
 	}
 }
 
 func (proc *SimpleProcessor) Process() <-chan interface{} {
 	outChan := make(chan interface{})
 
-	if proc.handler == nil {
+	if proc.Handler == nil {
 		panic("SimpleProcessor handler cannot be nil!")
 	}
-	if proc.source == nil {
+	if proc.Source == nil {
 		panic("SimpleProcessor source cannot be nil!")
 	}
 
 	go func() {
-		inChan := proc.source.Process()
+		inChan := proc.Source.Process()
 		for log := range inChan {
-			if res := proc.handler.Handle(log); res != nil {
+			if res := proc.Handler.Handle(log); res != nil {
 				outChan <- res
 			}
 		}
@@ -113,7 +114,6 @@ func (m *Muxer) Process() <-chan interface{} {
 		for _, c := range m.dest {
 			close(c)
 		}
-
 	}()
 
 	return outChan
@@ -155,4 +155,30 @@ func (dm *Demuxer) Process() <-chan interface{} {
 	}()
 
 	return outChan
+}
+
+type StringFilter func(string) bool
+
+type StringFilterHandler struct {
+	Filters []StringFilter
+}
+
+func (p *StringFilterHandler) Handle(log interface{}) interface{} {
+	switch t := log.(type) {
+	case string:
+		for _, filter := range p.Filters {
+			if filter(t) {
+				return log
+			}
+		}
+	default:
+		panic(fmt.Sprintf("String filter got non-string object: %T", log))
+	}
+
+	// Didn't pass the filters
+	return nil
+}
+
+func NewStringFilterProcessor(source Processor, filters []StringFilter) Processor {
+	return NewSimpleProcessor(source, &StringFilterHandler{filters})
 }

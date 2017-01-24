@@ -2,6 +2,7 @@ package processing
 
 import (
 	"github.com/stretchr/testify/assert"
+	"strings"
 	"testing"
 )
 
@@ -30,7 +31,7 @@ func TestSimpleOperator(t *testing.T) {
 	assert := assert.New(t)
 
 	handler := &passThroughHandler{}
-	processor := NewSimpleOperator(&emitter{100}, handler)
+	processor := NewSimpleProcessor(&emitter{100}, handler)
 
 	expected := 0
 	resChan := processor.Process()
@@ -60,7 +61,6 @@ func TestMuxer(t *testing.T) {
 				expected += 1
 			}
 			assert.Equal(expected, 100)
-			t.Log("Muxer Done!")
 			wait <- 1
 		}()
 	}
@@ -98,5 +98,86 @@ func TestDemuxer(t *testing.T) {
 	for _, val := range results {
 		assert.Equal(nemit, val)
 	}
+}
+
+func TestStringFilter(t *testing.T) {
+	assert := assert.New(t)
+
+	filters := []StringFilter{
+		func(log string) bool {
+			return strings.Index(log, "foo:") >= 0
+		},
+		func(log string) bool {
+			return strings.Index(log, "bar:") >= 0
+		},
+	}
+
+	var tests = []struct {
+		log      string
+		expected bool
+	}{
+		{"foo: 1234", true},
+		{"bar: 1234", true},
+		{"foo: bar: 1234", true},
+		{"nope: 1234", false},
+	}
+
+	handler := &StringFilterHandler{
+		filters,
+	}
+
+	for _, test := range tests {
+		res := handler.Handle(test.log)
+		if test.expected {
+			assert.Equal(test.log, res)
+		} else {
+			assert.Nil(res)
+		}
+	}
+}
+
+/*
+func TestStringFilterProcessor(t *testing.T) {
+	assert := assert.New(t)
+
+	filters := []StringFilter{
+		func(log string) bool {
+			return strings.Index(log, "foo:") >= 0
+		},
+		func(log string) bool {
+			return strings.Index(log, "bar:") >= 0
+		},
+		func(log string) bool {
+			return strings.Index(log, "somelongtag:") >= 0 ||
+				strings.Index(log, "othertag")
+		},
+	}
+
+	var tests = []struct {
+		log      string
+		expected bool
+	}{
+		{"foo: 1234", true},
+		{"bar: 1234", true},
+		{"foo: bar: 1234", true},
+		{"somelongtag: 1234", true},
+		{"othertag: 1234", true},
+		{"nope: 1234", false},
+		{"othertag?: 1234", false},
+	}
+
+	handler := &StringFilterHandler{
+		filters,
+	}
+
+	for _, test := range tests {
+		res := handler.Handle(test.log)
+		if test.expected {
+			assert.Equal(test.log, res)
+		} else {
+			assert.Nil(res)
+		}
+	}
 
 }
+*/
