@@ -22,17 +22,27 @@ type Parser interface {
 	Parse(payload string) (interface{}, error)
 }
 
+// ParserController represents a top-level entity that controls parsing.
+// At this level, parsers are tag-based, and the ParserController exposes
+// functions to set and clear parsers.
 type ParserController interface {
 	SetParser(tag string, p Parser)
 	ClearParser(tag string)
 }
 
+// Top-level parser/parser-controller.  The LoglinerParser itself is a parser,
+// and will parse a logline into either (a) a *Logline object if it doesn't
+// recognize the tag, (b) a tag-specific object if it does recognize the tag,
+// or (c) nil/error if it doesn't recognize the tag AND it is configured to
+// return an error on unrecognized tags.
 type LoglineParser struct {
 	LogcatParser    *LogcatParser
 	TagParsers      map[string]Parser
 	ErrOnUnknownTag bool
 }
 
+// Creates a new LoglineParser configure to parse all lines into Logline
+// objects.
 func NewLoglineParser() *LoglineParser {
 	parser := &LoglineParser{
 		LogcatParser:    NewLogcatParser(),
@@ -51,6 +61,7 @@ func (pc *LoglineParser) ClearParser(tag string) {
 	delete(pc.TagParsers, tag)
 }
 
+// Add a parser for all known parsers.
 func (pc *LoglineParser) AddKnownTags() {
 	pkparser := NewPrintkParser()
 	pkparser.ErrOnUnknownTag = false
