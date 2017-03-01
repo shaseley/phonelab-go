@@ -70,6 +70,8 @@ func commonTestParse(allconf []*parseComparison, t *testing.T) {
 		}
 		assert.True(res)
 		if !res {
+			t.Log("Obj: ", obj)
+			t.Log("Expected:", conf.expected)
 			fail("Objects are not equal", conf)
 		}
 	}
