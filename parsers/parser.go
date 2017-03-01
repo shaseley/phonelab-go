@@ -14,6 +14,7 @@ const (
 	TAG_PRINTK           = "KernelPrintk"
 	TAG_TRACE            = "Kernel-Trace"
 	TAG_PL_POWER_BATTERY = "Power-Battery-PhoneLab"
+	TAG_QOE_LIFECYCLE    = "Activity-LifeCycle-QoE"
 )
 
 // This is for subparsers, though the top-level logline parser also
