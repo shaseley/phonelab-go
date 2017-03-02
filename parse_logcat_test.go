@@ -1,4 +1,4 @@
-package parsers
+package phonelab
 
 import (
 	"bufio"
@@ -45,8 +45,8 @@ func TestCheckLogcatSort(t *testing.T) {
 
 	assert := assert.New(t)
 
-	if infile_raw, err = gocommons.Open("../test/test.log", os.O_RDONLY, gocommons.GZ_FALSE); err != nil {
-		fmt.Fprintln(os.Stderr, "Failed to open:", "../test/test.log", ":", err)
+	if infile_raw, err = gocommons.Open("./test/test.log", os.O_RDONLY, gocommons.GZ_FALSE); err != nil {
+		fmt.Fprintln(os.Stderr, "Failed to open:", "./test/test.log", ":", err)
 		return
 	}
 	defer infile_raw.Close()

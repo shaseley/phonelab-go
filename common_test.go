@@ -1,4 +1,4 @@
-package parsers
+package phonelab
 
 import (
 	"github.com/stretchr/testify/assert"

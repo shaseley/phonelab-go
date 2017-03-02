@@ -1,4 +1,4 @@
-package parsers
+package phonelab
 
 import (
 	"testing"

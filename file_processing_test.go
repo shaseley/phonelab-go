@@ -1,4 +1,4 @@
-package processing
+package phonelab
 
 import (
 	"github.com/stretchr/testify/assert"
@@ -8,7 +8,7 @@ import (
 func TestTextFileProcessor(t *testing.T) {
 	assert := assert.New(t)
 
-	processor := NewTextFileProcessor("../test/test.log", func(e error) {
+	processor := NewTextFileProcessor("./test/test.log", func(e error) {
 		t.Log("Error: ", e)
 		t.FailNow()
 	})

@@ -1,4 +1,4 @@
-package parsers
+package phonelab
 
 // These fields are included in every PhoneLab log
 type PLLog struct {

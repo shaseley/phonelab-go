@@ -1,4 +1,4 @@
-package parsers
+package phonelab
 
 // Tag: Activity-LifeCycle-QoE
 // Example:

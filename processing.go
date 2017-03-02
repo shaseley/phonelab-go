@@ -1,4 +1,4 @@
-package processing
+package phonelab
 
 // package processing contains interfaces and functionality for building
 // log-processing pipelines. The basic interface is Processor, which abstracts

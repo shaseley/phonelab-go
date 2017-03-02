@@ -1,4 +1,4 @@
-package processing
+package phonelab
 
 import (
 	"github.com/stretchr/testify/assert"
