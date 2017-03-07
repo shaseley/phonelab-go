@@ -182,3 +182,21 @@ func (p *StringFilterHandler) Handle(log interface{}) interface{} {
 func NewStringFilterProcessor(source Processor, filters []StringFilter) Processor {
 	return NewSimpleProcessor(source, &StringFilterHandler{filters})
 }
+
+// Log
+type LoglineProcessorHandler struct {
+	Parser *LoglineParser
+}
+
+func (p *LoglineProcessorHandler) Handle(log interface{}) interface{} {
+	line := log.(string)
+	ll, err := p.Parser.Parse(line)
+	if err != nil {
+		panic(fmt.Sprintf("Parse error: %v", err))
+	}
+	return ll
+}
+
+func NewLoglineProcessor(source Processor, parser *LoglineParser) Processor {
+	return NewSimpleProcessor(source, &LoglineProcessorHandler{parser})
+}
