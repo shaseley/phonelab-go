@@ -4,8 +4,16 @@ const (
 	DEFAULT_MAX_CONCURRENCY = 0
 )
 
+// Key-value pair Information pertaining to the source of pipeline data.
+type PipelineSourceInfo map[string]interface{}
+
+type PipelineSourceInstance struct {
+	Processor Processor
+	Info      PipelineSourceInfo
+}
+
 type PipelineSourceGenerator interface {
-	Process() <-chan Processor
+	Process() <-chan *PipelineSourceInstance
 }
 
 // Conceptually, a pipeline is network graph with a single source and multiple
@@ -28,7 +36,7 @@ type Pipeline []PipelineSink
 type PipelineBuilder interface {
 	// Return the first node in the pipeline - closest to the source - and
 	// a list of sinks.
-	BuildPipeline(source Processor) Pipeline
+	BuildPipeline(source *PipelineSourceInstance) Pipeline
 }
 
 // DataProcessors don't know anything about the source of their data, but can
@@ -57,7 +65,7 @@ func NewRunner(gen PipelineSourceGenerator, dp DataProcessor) *Runner {
 	}
 }
 
-func (r *Runner) runOne(source Processor, done chan int) {
+func (r *Runner) runOne(source *PipelineSourceInstance, done chan int) {
 	sinks := r.DataProcessor.BuildPipeline(source)
 	doneSink := make(chan int)
 

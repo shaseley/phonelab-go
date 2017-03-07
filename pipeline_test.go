@@ -11,11 +11,11 @@ type testDataProcessor struct {
 	sync.Mutex
 }
 
-func (t *testDataProcessor) BuildPipeline(source Processor) Pipeline {
+func (t *testDataProcessor) BuildPipeline(source *PipelineSourceInstance) Pipeline {
 	// Normally, there will be at least one node before the source.
 	// We'll fake that with a pass through handler.
 	handler := &passThroughHandler{}
-	processor := NewSimpleProcessor(source, handler)
+	processor := NewSimpleProcessor(source.Processor, handler)
 
 	sink := &testSink{
 		Source: processor,
@@ -45,13 +45,15 @@ type emitterGenerator struct {
 	sizes []int
 }
 
-func (e *emitterGenerator) Process() <-chan Processor {
-	outChan := make(chan Processor)
+func (e *emitterGenerator) Process() <-chan *PipelineSourceInstance {
+	outChan := make(chan *PipelineSourceInstance)
 
 	go func() {
 		for _, val := range e.sizes {
-			src := emitter{val}
-			outChan <- &src
+			outChan <- &PipelineSourceInstance{
+				Processor: &emitter{val},
+				Info:      make(PipelineSourceInfo),
+			}
 		}
 		close(outChan)
 	}()
