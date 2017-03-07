@@ -42,7 +42,7 @@ type LoglineParser struct {
 	ErrOnUnknownTag bool
 }
 
-// Creates a new LoglineParser configure to parse all lines into Logline
+// Creates a new LoglineParser configured to parse all lines into Logline
 // objects.
 func NewLoglineParser() *LoglineParser {
 	parser := &LoglineParser{
