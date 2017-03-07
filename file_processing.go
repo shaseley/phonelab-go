@@ -56,3 +56,36 @@ func (p *TextFileProcessor) Process() <-chan interface{} {
 
 	return outChan
 }
+
+// A source generator that generates one TextFileProcessor for each filename.
+type TextFileSourceGenerator struct {
+	Files      []string
+	ErrHandler ErrHandler
+}
+
+func NewTextFileSourceGenerator(files []string, errFunc ErrHandler) *TextFileSourceGenerator {
+	return &TextFileSourceGenerator{
+		Files:      files,
+		ErrHandler: errFunc,
+	}
+}
+
+func (tf *TextFileSourceGenerator) Process() <-chan *PipelineSourceInstance {
+	sourceChan := make(chan *PipelineSourceInstance)
+
+	go func() {
+		for _, file := range tf.Files {
+			info := make(PipelineSourceInfo)
+			info["type"] = "file"
+			info["file_name"] = file
+
+			sourceChan <- &PipelineSourceInstance{
+				Processor: NewTextFileProcessor(file, tf.ErrHandler),
+				Info:      info,
+			}
+		}
+		close(sourceChan)
+	}()
+
+	return sourceChan
+}
