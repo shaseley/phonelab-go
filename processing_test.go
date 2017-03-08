@@ -9,6 +9,7 @@ import (
 type passThroughHandler struct{}
 
 func (p *passThroughHandler) Handle(log interface{}) interface{} { return log }
+func (p *passThroughHandler) Finish()                            {}
 
 type emitter struct {
 	HowMany int

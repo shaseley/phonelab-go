@@ -23,6 +23,7 @@ type Processor interface {
 // processed.
 type LogHandler interface {
 	Handle(log interface{}) interface{}
+	Finish()
 }
 
 // SimpleProcessor is a Processor with a single source and a single output
@@ -60,6 +61,7 @@ func (proc *SimpleProcessor) Process() <-chan interface{} {
 				outChan <- res
 			}
 		}
+		proc.Handler.Finish()
 		close(outChan)
 	}()
 
@@ -180,6 +182,8 @@ func (p *StringFilterHandler) Handle(log interface{}) interface{} {
 	return nil
 }
 
+func (p *StringFilterHandler) Finish() {}
+
 func NewStringFilterProcessor(source Processor, filters []StringFilter) Processor {
 	return NewSimpleProcessor(source, &StringFilterHandler{filters})
 }
@@ -197,6 +201,8 @@ func (p *LoglineProcessorHandler) Handle(logline interface{}) interface{} {
 	}
 	return ll
 }
+
+func (p *LoglineProcessorHandler) Finish() {}
 
 func NewLoglineProcessor(source Processor, parser *LoglineParser) Processor {
 	return NewSimpleProcessor(source, &LoglineProcessorHandler{parser})

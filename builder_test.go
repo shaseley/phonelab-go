@@ -70,7 +70,11 @@ type countingProcessorGen struct {
 }
 
 func (c *countingProcessorGen) GenerateProcessor(source *PipelineSourceInstance) Processor {
-	return newCountingProc(source, c.manager)
+	return NewSimpleProcessor(source.Processor, &countingHandler{
+		count:    0,
+		filename: source.Info["file_name"].(string),
+		manager:  c.manager,
+	})
 }
 
 // Collect all the results
@@ -79,43 +83,26 @@ type countingResultsManager struct {
 	sync.Mutex
 }
 
-func (m *countingResultsManager) onFinish(filename string, count int) {
+func (m *countingResultsManager) Finish(filename string, count int) {
 	m.Lock()
 	m.counts[filename] = count
 	m.Unlock()
 }
 
 // Count lines in files
-type countingProcessor struct {
+type countingHandler struct {
 	filename string
 	count    int
-	source   Processor
 	manager  *countingResultsManager
 }
 
-func newCountingProc(source *PipelineSourceInstance, manager *countingResultsManager) Processor {
-	return &countingProcessor{
-		count:    0,
-		filename: source.Info["file_name"].(string),
-		source:   source.Processor,
-		manager:  manager,
-	}
+func (proc *countingHandler) Handle(log interface{}) interface{} {
+	proc.count += 1
+	return nil
 }
 
-func (proc *countingProcessor) Process() <-chan interface{} {
-
-	outChan := make(chan interface{})
-
-	go func() {
-		inChan := proc.source.Process()
-		for _ = range inChan {
-			proc.count += 1
-		}
-		close(outChan)
-		proc.manager.onFinish(proc.filename, proc.count)
-	}()
-
-	return outChan
+func (proc *countingHandler) Finish() {
+	proc.manager.Finish(proc.filename, proc.count)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -125,38 +112,24 @@ func (proc *countingProcessor) Process() <-chan interface{} {
 type skipProcessorGen struct{}
 
 func (s *skipProcessorGen) GenerateProcessor(source *PipelineSourceInstance) Processor {
-	return newSkipProc(source)
+	return NewSimpleProcessor(source.Processor, &skipProcessor{})
 }
 
 // Count lines in files
 type skipProcessor struct {
-	source Processor
+	odd bool
 }
 
-func newSkipProc(source *PipelineSourceInstance) Processor {
-	return &skipProcessor{
-		source: source.Processor,
+func (proc *skipProcessor) Handle(log interface{}) interface{} {
+	proc.odd = !proc.odd
+	if proc.odd {
+		return log
+	} else {
+		return nil
 	}
 }
 
-func (proc *skipProcessor) Process() <-chan interface{} {
-
-	outChan := make(chan interface{})
-	odd := true
-
-	go func() {
-		inChan := proc.source.Process()
-		for log := range inChan {
-			if !odd {
-				outChan <- log
-			}
-			odd = !odd
-		}
-		close(outChan)
-	}()
-
-	return outChan
-}
+func (proc *skipProcessor) Finish() {}
 
 ////////////////////////////////////////////////////////////////////////////////
 
