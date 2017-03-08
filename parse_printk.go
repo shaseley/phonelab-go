@@ -78,7 +78,7 @@ func NewPrintkParser() *PrintkParser {
 				NewMsmThermalParser(),
 			},
 			&PrintkSubparser{
-				"PM: suspend ",
+				"PM: suspend e",
 				NewPMManagementParser(),
 			},
 			&PrintkSubparser{
@@ -110,6 +110,13 @@ func (p *PrintkParser) Regex() []*regexp.Regexp {
 
 func (p *PrintkParser) Parse(line string) (interface{}, error) {
 	var printk *PrintkLog
+
+	// For these add-ons, we'll just ignore them and return the string.
+	// This has the same effect as not invoking the subparser.
+	// FIXME: is there a better way to do this?
+	if strings.HasPrefix(line, "SUBSYSTEM=") || strings.HasPrefix(line, "DEVICE=") {
+		return line, nil
+	}
 
 	// Parse using regex parser
 	if obj, err := p.RegexParser.Parse(line); err != nil {
