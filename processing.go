@@ -8,6 +8,7 @@ package phonelab
 
 import (
 	"fmt"
+	"log"
 	"sync"
 )
 
@@ -188,11 +189,11 @@ type LoglineProcessorHandler struct {
 	Parser *LoglineParser
 }
 
-func (p *LoglineProcessorHandler) Handle(log interface{}) interface{} {
-	line := log.(string)
+func (p *LoglineProcessorHandler) Handle(logline interface{}) interface{} {
+	line := logline.(string)
 	ll, err := p.Parser.Parse(line)
 	if err != nil {
-		panic(fmt.Sprintf("Parse error: %v", err))
+		log.Printf("Error parsing line: %v\n", err)
 	}
 	return ll
 }
