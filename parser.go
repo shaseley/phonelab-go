@@ -199,7 +199,7 @@ func unpackFromRegex(source string, re *regexp.Regexp, dest interface{}) (map[st
 	values := re.FindAllStringSubmatch(source, -1)
 
 	if len(values) == 0 {
-		return nil, fmt.Errorf("The regex failed to parse the source text")
+		return nil, fmt.Errorf("The regex failed to parse the source text: " + source)
 	}
 
 	m := zipToDict(keys, values[0])
