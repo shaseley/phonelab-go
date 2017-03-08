@@ -42,7 +42,7 @@ type SimpleFilterConf struct {
 type PipelineConf struct {
 	SimpleFilters  []*SimpleFilterConf `yaml:"simple_filters"`
 	ComplexFilters []string            `yaml:"complex_filters"`
-	Tags           []string            `yaml:"tags"`
+	Parsers        []string            `yaml:"parsers"`
 	Processors     []string            `yaml:"processors"`
 }
 
@@ -131,9 +131,9 @@ func (conf *PipelineConf) validate(env *Environment) error {
 		}
 	}
 
-	if len(conf.Tags) > 0 {
-		for _, tag := range conf.Tags {
-			if len(tag) == 0 {
+	if len(conf.Parsers) > 0 {
+		for _, parser := range conf.Parsers {
+			if len(parser) == 0 {
 				return errors.New("Invalid tag: tag cannot be empty.")
 			}
 		}
@@ -232,9 +232,12 @@ func (proc *RunnerConfProcessor) BuildPipeline(sourceInst *PipelineSourceInstanc
 	// Parsers: Get these from the environment instead of the conf; we'll parse
 	// anything we know how to.
 	parser := NewLoglineParser()
-	for tag, pgen := range proc.Env.Parsers {
-		parser.SetParser(tag, pgen())
+	for _, tag := range proc.Conf.Parsers {
+		if parserGen, ok := proc.Env.Parsers[tag]; ok {
+			parser.SetParser(tag, parserGen())
+		}
 	}
+
 	source = NewLoglineProcessor(source, parser)
 
 	for _, procName := range proc.Conf.Processors {
@@ -247,8 +250,6 @@ func (proc *RunnerConfProcessor) BuildPipeline(sourceInst *PipelineSourceInstanc
 			})
 		}
 	}
-
-	// TODO: Do we want to use tags?
 
 	return []PipelineSink{
 		&RunnerProcSink{

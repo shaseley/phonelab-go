@@ -25,7 +25,7 @@ pipeline:
     - substrings: ["foo", "bar"]
     - substrings: ["baz"]
   complex_filters: []
-  tags: ["tag1", "tag2"]
+  parsers: ["tag1", "tag2"]
   processors: ["proc1"]
 `
 	spec, err := RunnerConfFromString(specString)
@@ -51,7 +51,7 @@ pipeline:
 				},
 			},
 			ComplexFilters: []string{},
-			Tags:           []string{"tag1", "tag2"},
+			Parsers:        []string{"tag1", "tag2"},
 			Processors:     []string{"proc1"},
 		},
 	}
