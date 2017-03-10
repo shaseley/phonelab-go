@@ -29,6 +29,10 @@ type Logline struct {
 	Payload interface{} `logcat:"-"`
 }
 
+func (ll *Logline) MonotonicTimestamp() float64 {
+	return ll.TraceTime
+}
+
 type Loglines []*Logline
 
 var PATTERN = regexp.MustCompile(`` +
