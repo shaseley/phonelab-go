@@ -74,3 +74,38 @@ func TestMultTextFileProcessor(t *testing.T) {
 
 	assert.Equal(2, pos)
 }
+
+// Make sure we can open the file multiple times
+func TestTextFileProcessorMux(t *testing.T) {
+	t.Parallel()
+
+	assert := assert.New(t)
+
+	const NUM_OPENS = 10
+
+	processor := NewTextFileProcessor("./test/test.log", func(e error) {
+		t.Log("Error: ", e)
+		t.FailNow()
+	})
+
+	done := make(chan int)
+
+	for i := 0; i < NUM_OPENS; i++ {
+		go func() {
+			logChan := processor.Process()
+			logs := 0
+			for log := range logChan {
+				assert.True(len(log.(string)) > 0)
+				logs += 1
+			}
+			done <- logs
+		}()
+	}
+
+	allLogs := 0
+	for i := 0; i < NUM_OPENS; i++ {
+		allLogs += <-done
+	}
+
+	assert.Equal(5000*NUM_OPENS, allLogs)
+}
