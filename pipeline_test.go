@@ -6,39 +6,56 @@ import (
 	"testing"
 )
 
-type testDataProcessor struct {
-	sinks []*testSink
+// A processor that totals up the loglines and emits it.
+type totalProcessor struct {
+	source Processor
+}
+
+func (proc *totalProcessor) Process() <-chan interface{} {
+	outChan := make(chan interface{})
+
+	go func() {
+		inChan := proc.source.Process()
+		total := 0
+		for _ = range inChan {
+			total += 1
+		}
+		outChan <- total
+		close(outChan)
+	}()
+
+	return outChan
+}
+
+// A data processor that collects the totals from all the sources.
+type totalDataCollector struct {
+	results []int
 	sync.Mutex
 }
 
-func (t *testDataProcessor) BuildPipeline(source *PipelineSourceInstance) Pipeline {
+func newTestDataCollector() *totalDataCollector {
+	return &totalDataCollector{
+		results: make([]int, 0),
+	}
+}
+
+func (t *totalDataCollector) BuildPipeline(source *PipelineSourceInstance) *Pipeline {
 	// Normally, there will be at least one node before the source.
 	// We'll fake that with a pass through handler.
-	handler := &passThroughHandler{}
-	processor := NewSimpleProcessor(source.Processor, handler)
+	processor := &totalProcessor{source.Processor}
 
-	sink := &testSink{
-		Source: processor,
-		Data:   make([]interface{}, 0),
+	return &Pipeline{
+		LastHop: processor,
 	}
+}
 
+func (t *totalDataCollector) OnData(data interface{}) {
 	t.Lock()
-	t.sinks = append(t.sinks, sink)
+	t.results = append(t.results, data.(int))
 	t.Unlock()
-	return []PipelineSink{sink}
 }
 
-func (t *testDataProcessor) Finish() {}
-
-// Simple data sink that collects everything
-type testSink struct {
-	Source Processor
-	Data   []interface{}
-}
-
-func (t *testSink) GetSource() Processor    { return t.Source }
-func (t *testSink) OnData(data interface{}) { t.Data = append(t.Data, data) }
-func (t *testSink) OnFinish()               {}
+func (t *totalDataCollector) Finish() {}
 
 // Simple Generator
 type emitterGenerator struct {
@@ -64,19 +81,26 @@ func (e *emitterGenerator) Process() <-chan *PipelineSourceInstance {
 func TestPipeline(t *testing.T) {
 	assert := assert.New(t)
 
-	dataProc := &testDataProcessor{
-		sinks: make([]*testSink, 0),
-	}
+	dataProc := newTestDataCollector()
 
 	runner := NewRunner(
 		&emitterGenerator{
 			sizes: []int{10, 20, 50},
 		},
 		dataProc,
+		dataProc,
 	)
+
 	runner.Run()
-	for _, exp := range dataProc.sinks {
-		assert.NotNil(exp)
-		t.Log(len(exp.Data))
+
+	totals := make(map[int]bool)
+
+	for _, total := range dataProc.results {
+		totals[total] = true
 	}
+
+	assert.Equal(3, len(totals))
+	assert.True(totals[10])
+	assert.True(totals[20])
+	assert.True(totals[50])
 }

@@ -16,73 +16,69 @@ type PipelineSourceGenerator interface {
 	Process() <-chan *PipelineSourceInstance
 }
 
-// Conceptually, a pipeline is network graph with a single source and multiple
-// sinks. The sinks represent processing paths; for example, if a DataProcessor
-// computes some data and statistics, there may be two sinks. DataProcessors
-// that only focus on one task will probably have only one sink, which we
-// imagine is the common case.
-type PipelineSink interface {
-	GetSource() Processor
-	OnData(interface{})
-	OnFinish()
-}
-
-// Our representation of a pipeline is a sink-centric one. Each sink has a
-// source (Processor) that represents its parent in the graph and generates
-// data. This processor will have its own parent processor, all the way up
-// to the root.
-type Pipeline []PipelineSink
-
-type PipelineBuilder interface {
-	// Return the first node in the pipeline - closest to the source - and
-	// a list of sinks.
-	BuildPipeline(source *PipelineSourceInstance) Pipeline
-}
-
-// DataProcessors don't know anything about the source of their data, but can
-// assume that they are processing at the right granularity. For example, the
-// same processor logic should work if data is read from a single, local
-// logcat file, gzipped log files, boot_id processor, or streamed over a
-// network.
+// Conceptually, a pipeline is network graph with a single source and single
+// sink. They aren't necessarily a flat list of processing nodes; the input
+// may fork into multiple streams that are recombined by timestamps or in some
+// other way. Since multiple paths can always be demuxed into a single
+// processing node, having a single sink is not limiting. The same holds for
+// input and muxing.
 //
-// The DataProcessor will be connected to a source through a broker.
-type DataProcessor interface {
-	PipelineBuilder
+// Our representation of a pipeline is a sink-centric one. The pipeline is
+// described by the last-hop Processor, of which we'll invoke its Process()
+// method to kick off processing.
+//
+// The last hop can either be the sink, or the DataCollector can play that
+// role. By letting the DataCollector act as the sink, you can get more
+// reusability out of processors, theoretically anyways.
+type Pipeline struct {
+	LastHop Processor
+}
+
+// Build a Pipeline configured to get its input from source.
+type PipelineBuilder interface {
+	// Instantiate the pipline using the given source info.
+	BuildPipeline(source *PipelineSourceInstance) *Pipeline
+}
+
+// DataCollectors generally don't know anything about the source of their data,
+// but can assume that they are processing at the right granularity. For
+// example, the same processor logic should work if data is read from a single,
+// local logcat file, gzipped log files, boot_id processor, or streamed over a
+// network.
+type DataCollector interface {
+	OnData(interface{})
 	Finish()
 }
 
+// A Runner manages running the processors. Its job is to facilitate building
+// pipelines once for each source, kicking off the processing, and passing
+// results to the DataCollector.
 type Runner struct {
 	Source         PipelineSourceGenerator
-	DataProcessor  DataProcessor
+	Collector      DataCollector
+	Builder        PipelineBuilder
 	MaxConcurrency int
 }
 
-func NewRunner(gen PipelineSourceGenerator, dp DataProcessor) *Runner {
+func NewRunner(gen PipelineSourceGenerator, dc DataCollector, plb PipelineBuilder) *Runner {
 	return &Runner{
 		Source:         gen,
-		DataProcessor:  dp,
+		Collector:      dc,
+		Builder:        plb,
 		MaxConcurrency: DEFAULT_MAX_CONCURRENCY,
 	}
 }
 
 func (r *Runner) runOne(source *PipelineSourceInstance, done chan int) {
-	sinks := r.DataProcessor.BuildPipeline(source)
-	doneSink := make(chan int)
+	// Build it
+	pipeline := r.Builder.BuildPipeline(source)
 
-	for _, s := range sinks {
-		go func(sink PipelineSink) {
-			proc := sink.GetSource()
-			resChan := proc.Process()
-			for res := range resChan {
-				sink.OnData(res)
-			}
-			sink.OnFinish()
-			doneSink <- 1
-		}(s)
-	}
+	// Start the processing
+	resChan := pipeline.LastHop.Process()
 
-	for i := 0; i < len(sinks); i++ {
-		<-doneSink
+	// Drain the results and forward them to the DataCollector.
+	for res := range resChan {
+		r.Collector.OnData(res)
 	}
 
 	done <- 1
@@ -110,5 +106,5 @@ func (runner *Runner) Run() {
 		running -= 1
 	}
 
-	runner.DataProcessor.Finish()
+	runner.Collector.Finish()
 }

@@ -166,11 +166,11 @@ func (conf *PipelineRunnerConf) ToRunner(env *Environment) (*Runner, error) {
 
 	proc := NewRunnerConfProcssor(conf, env)
 
-	return NewRunner(gen, proc), nil
+	return NewRunner(gen, proc, proc), nil
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// DataProcessor built from PipelineRunnerConf
+// DataCollector built from PipelineRunnerConf
 
 type RunnerConfProcessor struct {
 	Conf      *PipelineConf
@@ -198,7 +198,7 @@ func makeStringFilterFunc(substrings []string) StringFilter {
 
 // This assumes the configuration makes sense
 // FIXME: This probably isn't the best assumption.
-func (proc *RunnerConfProcessor) BuildPipeline(sourceInst *PipelineSourceInstance) Pipeline {
+func (proc *RunnerConfProcessor) BuildPipeline(sourceInst *PipelineSourceInstance) *Pipeline {
 
 	filters := make([]StringFilter, 0)
 	source := sourceInst.Processor
@@ -251,23 +251,11 @@ func (proc *RunnerConfProcessor) BuildPipeline(sourceInst *PipelineSourceInstanc
 		}
 	}
 
-	return []PipelineSink{
-		&RunnerProcSink{
-			Source: source,
-		},
+	// TODO: add custom finish logic
+	return &Pipeline{
+		LastHop: source,
 	}
 }
 
-func (proc *RunnerConfProcessor) Finish() {}
-
-////////////////////////////////////////////////////////////////////////////////
-// Simple sink built from PipelineRunnerConf
-
-// Simple data sink that collects everything
-type RunnerProcSink struct {
-	Source Processor
-}
-
-func (sink *RunnerProcSink) GetSource() Processor    { return sink.Source }
-func (sink *RunnerProcSink) OnData(data interface{}) {}
-func (sink *RunnerProcSink) OnFinish()               {}
+func (proc *RunnerConfProcessor) OnData(data interface{}) {}
+func (proc *RunnerConfProcessor) Finish()                 {}
