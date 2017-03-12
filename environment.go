@@ -7,18 +7,22 @@ type ProcessorGen interface {
 	GenerateProcessor(info *PipelineSourceInstance) Processor
 }
 
+type DataCollectorGen func() DataCollector
+
 type Environment struct {
 	// Parsers we know about
-	Parsers    map[string]ParserGen
-	Processors map[string]ProcessorGen
-	Filters    map[string]StringFilter
+	Parsers        map[string]ParserGen
+	Processors     map[string]ProcessorGen
+	DataCollectors map[string]DataCollectorGen
+	Filters        map[string]StringFilter
 }
 
 func NewEnvironment() *Environment {
 	env := &Environment{
-		Parsers:    make(map[string]ParserGen),
-		Processors: make(map[string]ProcessorGen),
-		Filters:    make(map[string]StringFilter),
+		Parsers:        make(map[string]ParserGen),
+		Processors:     make(map[string]ProcessorGen),
+		DataCollectors: make(map[string]DataCollectorGen),
+		Filters:        make(map[string]StringFilter),
 	}
 
 	env.RegisterKnownParsers()
