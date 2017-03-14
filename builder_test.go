@@ -21,16 +21,19 @@ source:
     - "path/to/some/file"
     - "path/to/some/other/file"
 pipeline:
-  simple_filters:
-    - substrings: ["foo", "bar"]
-    - substrings: ["baz"]
-  complex_filters: []
+  filters:
+    - type: "simple"
+      filter: "foo&&bar"
+    - type: "custom"
+      filter: "baz"
+    - type: "regex"
+      filter: "^sometext.*othertext.*$"
   parsers: ["tag1", "tag2"]
   processors: ["proc1"]
 `
 	spec, err := RunnerConfFromString(specString)
-	require.NotNil(spec)
 	require.Nil(err)
+	require.NotNil(spec)
 
 	expected := &PipelineRunnerConf{
 		MaxConcurrency: 5,
@@ -42,17 +45,22 @@ pipeline:
 			},
 		},
 		PipelineConf: &PipelineConf{
-			SimpleFilters: []*SimpleFilterConf{
-				&SimpleFilterConf{
-					Substrings: []string{"foo", "bar"},
+			Filters: []*FilterConf{
+				&FilterConf{
+					Type:   FilterTypeSimple,
+					Filter: "foo&&bar",
 				},
-				&SimpleFilterConf{
-					Substrings: []string{"baz"},
+				&FilterConf{
+					Type:   FilterTypeCustom,
+					Filter: "baz",
+				},
+				&FilterConf{
+					Type:   FilterTypeRegex,
+					Filter: "^sometext.*othertext.*$",
 				},
 			},
-			ComplexFilters: []string{},
-			Parsers:        []string{"tag1", "tag2"},
-			Processors:     []string{"proc1"},
+			Parsers:    []string{"tag1", "tag2"},
+			Processors: []string{"proc1"},
 		},
 	}
 
@@ -75,16 +83,17 @@ source:
     - "path/to/some/file"
     - "path/to/some/other/file"
 preprocessors:
-  - simple_filters:
-      - substrings: ["sf1"]
-    complex_filters: ["cf1"]
+  - filters:
+      - type: "simple"
+        filter: "sf1"
     parsers: ["tag3", "tag4"]
     processors: ["preproc1"]
 pipeline:
-  simple_filters:
-    - substrings: ["foo", "bar"]
-    - substrings: ["baz"]
-  complex_filters: []
+  filters:
+    - type: simple
+      filter: "foo&&bar"
+    - type: custom
+      filter: "baz"
   parsers: ["tag1", "tag2"]
   processors: ["proc1"]
 `
@@ -103,28 +112,29 @@ pipeline:
 		},
 		Preprocessors: []*PipelineConf{
 			&PipelineConf{
-				SimpleFilters: []*SimpleFilterConf{
-					&SimpleFilterConf{
-						Substrings: []string{"sf1"},
+				Filters: []*FilterConf{
+					&FilterConf{
+						Type:   FilterTypeSimple,
+						Filter: "sf1",
 					},
 				},
-				ComplexFilters: []string{"cf1"},
-				Parsers:        []string{"tag3", "tag4"},
-				Processors:     []string{"preproc1"},
+				Parsers:    []string{"tag3", "tag4"},
+				Processors: []string{"preproc1"},
 			},
 		},
 		PipelineConf: &PipelineConf{
-			SimpleFilters: []*SimpleFilterConf{
-				&SimpleFilterConf{
-					Substrings: []string{"foo", "bar"},
+			Filters: []*FilterConf{
+				&FilterConf{
+					Type:   FilterTypeSimple,
+					Filter: "foo&&bar",
 				},
-				&SimpleFilterConf{
-					Substrings: []string{"baz"},
+				&FilterConf{
+					Type:   FilterTypeCustom,
+					Filter: "baz",
 				},
 			},
-			ComplexFilters: []string{},
-			Parsers:        []string{"tag1", "tag2"},
-			Processors:     []string{"proc1"},
+			Parsers:    []string{"tag1", "tag2"},
+			Processors: []string{"proc1"},
 		},
 	}
 

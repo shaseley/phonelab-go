@@ -9,6 +9,7 @@ package phonelab
 import (
 	"fmt"
 	"log"
+	"regexp"
 	"sync"
 )
 
@@ -186,6 +187,13 @@ func (p *StringFilterHandler) Finish() {}
 
 func NewStringFilterProcessor(source Processor, filters []StringFilter) Processor {
 	return NewSimpleProcessor(source, &StringFilterHandler{filters})
+}
+
+func makeRegexFilter(regexStr string) StringFilter {
+	regex := regexp.MustCompile(regexStr)
+	return func(s string) bool {
+		return regex.MatchString(s)
+	}
 }
 
 // Log

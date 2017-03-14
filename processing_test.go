@@ -137,34 +137,29 @@ func TestStringFilter(t *testing.T) {
 	}
 }
 
-/*
-func TestStringFilterProcessor(t *testing.T) {
+func TestRegexFilter(t *testing.T) {
 	assert := assert.New(t)
 
-	filters := []StringFilter{
-		func(log string) bool {
-			return strings.Index(log, "foo:") >= 0
-		},
-		func(log string) bool {
-			return strings.Index(log, "bar:") >= 0
-		},
-		func(log string) bool {
-			return strings.Index(log, "somelongtag:") >= 0 ||
-				strings.Index(log, "othertag")
-		},
+	regexes := []string{
+		"^.*boo:.*$",
+		"^.*foo:.*bar:.*$",
+	}
+
+	filters := []StringFilter{}
+	for _, re := range regexes {
+		filters = append(filters, makeRegexFilter(re))
 	}
 
 	var tests = []struct {
 		log      string
 		expected bool
 	}{
-		{"foo: 1234", true},
-		{"bar: 1234", true},
+		{"boo: 1234", true},
+		{"bar: 1234", false},
+		{"foo: blarg:", false},
 		{"foo: bar: 1234", true},
-		{"somelongtag: 1234", true},
-		{"othertag: 1234", true},
+		{"foo: something... bar: 1234", true},
 		{"nope: 1234", false},
-		{"othertag?: 1234", false},
 	}
 
 	handler := &StringFilterHandler{
@@ -179,6 +174,4 @@ func TestStringFilterProcessor(t *testing.T) {
 			assert.Nil(res)
 		}
 	}
-
 }
-*/

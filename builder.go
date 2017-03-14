@@ -37,15 +37,23 @@ type PipelineSourceConf struct {
 	Sources []string           `yaml:"sources"`
 }
 
-type SimpleFilterConf struct {
-	Substrings []string `yaml:"substrings"`
+type FilterType string
+
+const (
+	FilterTypeSimple FilterType = "simple"
+	FilterTypeRegex             = "regex"
+	FilterTypeCustom            = "custom"
+)
+
+type FilterConf struct {
+	Type   FilterType `yaml:"type"`
+	Filter string     `yaml:"filter"`
 }
 
 type PipelineConf struct {
-	SimpleFilters  []*SimpleFilterConf `yaml:"simple_filters"`
-	ComplexFilters []string            `yaml:"complex_filters"`
-	Parsers        []string            `yaml:"parsers"`
-	Processors     []string            `yaml:"processors"`
+	Filters    []*FilterConf `yaml:"filters"`
+	Parsers    []string      `yaml:"parsers"`
+	Processors []string      `yaml:"processors"`
 }
 
 func RunnerConfFromString(text string) (*PipelineRunnerConf, error) {
@@ -109,26 +117,25 @@ func (conf *PipelineSourceConf) ToPipelineSourceGenerator() (PipelineSourceGener
 
 func (conf *PipelineConf) validate(env *Environment) error {
 
-	if len(conf.SimpleFilters) > 0 {
-		for _, filterSpec := range conf.SimpleFilters {
-			if len(filterSpec.Substrings) == 0 {
-				return errors.New("Simple filter spec must contain at least one condition.")
+	if len(conf.Filters) > 0 {
+		for _, filterSpec := range conf.Filters {
+			if len(filterSpec.Filter) == 0 {
+				return errors.New("Filter must not be empty.")
 			} else {
-				for _, cond := range filterSpec.Substrings {
-					if len(cond) == 0 {
-						return errors.New("Invalid filter spec string: string cannot be empty.")
+				switch filterSpec.Type {
+				case FilterTypeSimple:
+					// OK
+					break
+				case FilterTypeRegex:
+					// Looking for side effects.
+					_ = makeRegexFilter(filterSpec.Filter)
+					break
+				case FilterTypeCustom:
+					// Check if we have a function already
+					if _, ok := env.Filters[filterSpec.Filter]; !ok {
+						return errors.New("Unknown custom filter: " + filterSpec.Filter)
 					}
 				}
-			}
-		}
-	}
-
-	if len(conf.ComplexFilters) > 0 {
-		for _, filterName := range conf.ComplexFilters {
-			if len(filterName) == 0 {
-				return errors.New("Invalid filter name: name cannot be empty.")
-			} else if _, ok := env.Filters[filterName]; !ok {
-				return errors.New("Unknown filter: " + filterName)
 			}
 		}
 	}
@@ -159,25 +166,34 @@ func (conf *PipelineConf) validate(env *Environment) error {
 func (conf *PipelineConf) buildFilterProc(env *Environment, source Processor) Processor {
 	filters := make([]StringFilter, 0)
 
-	// Filters first
-	for _, filterSpec := range conf.SimpleFilters {
-		if len(filterSpec.Substrings) > 0 {
-			valid := []string{}
-			for _, cond := range filterSpec.Substrings {
-				if len(cond) > 0 {
-					valid = append(valid, cond)
+	if len(conf.Filters) > 0 {
+		for _, filterSpec := range conf.Filters {
+			if len(filterSpec.Filter) > 0 {
+				switch filterSpec.Type {
+				case FilterTypeSimple:
+					{
+						valid := []string{}
+						for _, cond := range strings.Split(filterSpec.Filter, "&&") {
+							if len(cond) > 0 {
+								valid = append(valid, cond)
+							}
+						}
+						if len(valid) > 0 {
+							filters = append(filters, makeStringFilterFunc(valid))
+						}
+						break
+					}
+				case FilterTypeRegex:
+					{
+						filters = append(filters, makeRegexFilter(filterSpec.Filter))
+						break
+					}
+				case FilterTypeCustom:
+					if filter, ok := env.Filters[filterSpec.Filter]; ok {
+						filters = append(filters, filter)
+					}
 				}
 			}
-			if len(valid) > 0 {
-				filters = append(filters, makeStringFilterFunc(valid))
-			}
-		}
-	}
-
-	// Complex filters
-	for _, filterName := range conf.ComplexFilters {
-		if filter, ok := env.Filters[filterName]; ok {
-			filters = append(filters, filter)
 		}
 	}
 
