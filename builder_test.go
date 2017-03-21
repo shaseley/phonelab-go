@@ -595,3 +595,125 @@ foo: bar"`, false},
 	}
 
 }
+
+////////////////////////////////////////////////////////////////////////////////
+// Processor that outputs the current line count
+
+type lineCount struct {
+	Count int
+}
+
+func (lc *lineCount) MonotonicTimestamp() float64 {
+	return float64(lc.Count)
+}
+
+// Generate processors
+type lineCountProcessorGen struct{}
+
+func (lc *lineCountProcessorGen) GenerateProcessor(source *PipelineSourceInstance) Processor {
+	return NewSimpleProcessor(source.Processor, &lineCountProcessor{})
+}
+
+// Count lines in files
+type lineCountProcessor struct {
+	count int
+}
+
+func (proc *lineCountProcessor) Handle(log interface{}) interface{} {
+	proc.count += 1
+	return &lineCount{proc.count}
+}
+
+func (proc *lineCountProcessor) Finish() {}
+
+// Processor that receives the counts
+
+// Custom DataCollector that counts the number of lines it sees and compares it
+// with the expected number on Finish().
+type lcDataCollector struct {
+	Counts   map[*lineCount]int
+	expected int
+	t        *testing.T
+	sync.Mutex
+}
+
+func (dc *lcDataCollector) OnData(data interface{}) {
+	dc.Lock()
+	dc.Counts[data.(*lineCount)] += 1
+	dc.Unlock()
+}
+
+func (dc *lcDataCollector) Finish() {
+	assert.Equal(dc.t, dc.expected, len(dc.Counts))
+	for _, c := range dc.Counts {
+		assert.Equal(dc.t, 4, c)
+	}
+}
+
+func TestBuilderInputMuxing(t *testing.T) {
+	t.Parallel()
+	assert := assert.New(t)
+	require := require.New(t)
+
+	env := NewEnvironment()
+	env.Processors["passthrough"] = &passThroughProcessorGen{}
+	env.Processors["lineCounter"] = &lineCountProcessorGen{}
+
+	collectorGen := func() DataCollector {
+		return &lcDataCollector{
+			Counts:   make(map[*lineCount]int),
+			expected: 15000,
+			t:        t,
+		}
+	}
+	env.DataCollectors["test"] = collectorGen
+
+	confString := `
+data_collector: "test"
+source:
+  type: files
+  sources: ["./test/*.log"]
+processors:
+  - name: lc
+    generator: lineCounter
+    has_logstream: true
+
+  - name: p1
+    inputs: ["lc"]
+    generator: passthrough
+
+  - name: p2
+    inputs: ["lc"]
+    generator: passthrough
+
+  - name: p3
+    inputs: ["lc"]
+    generator: passthrough
+
+  - name: p4
+    inputs: ["lc"]
+    generator: passthrough
+
+  - name: main
+    generator: passthrough
+    inputs: ["p1", "p2", "p3", "p4"]
+
+sink_name: main
+`
+	conf, err := RunnerConfFromString(confString)
+	require.Nil(err)
+	require.NotNil(conf)
+
+	assert.Equal("test", conf.DataCollector)
+
+	runner, err := conf.ToRunner(env)
+	require.Nil(err)
+	require.NotNil(runner)
+
+	t.Log(runner.Source)
+
+	// The processors handle the checking.
+	errs := runner.Run()
+	assert.Equal(0, len(errs))
+	t.Log(errs)
+}
