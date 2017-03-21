@@ -230,6 +230,8 @@ func (conf *ProcessorConf) validate(env *Environment) error {
 				return errors.New("Filter must not be empty.")
 			} else {
 				switch filterSpec.Type {
+				default:
+					return errors.New("Invalid filter type: " + string(filterSpec.Type))
 				case FilterTypeSimple:
 					// OK
 					break
@@ -252,6 +254,8 @@ func (conf *ProcessorConf) validate(env *Environment) error {
 		for _, parser := range conf.Parsers {
 			if len(parser) == 0 {
 				return errors.New("Invalid tag: tag cannot be empty.")
+			} else if _, ok := env.Parsers[parser]; !ok {
+				return errors.New("Unknown parser: " + parser)
 			}
 		}
 	}

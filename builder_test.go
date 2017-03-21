@@ -6,6 +6,7 @@ import (
 	"io/ioutil"
 	"os"
 	"reflect"
+	"strings"
 	"sync"
 	"testing"
 )
@@ -825,4 +826,207 @@ sink_name: main
 	errs := runner.Run()
 	assert.Equal(0, len(errs))
 	t.Log(errs)
+}
+
+func TestPipelineSourceErrors(t *testing.T) {
+	t.Parallel()
+	assert := assert.New(t)
+
+	confs := []*PipelineSourceConf{
+		&PipelineSourceConf{
+			Type: "foo",
+			Sources: []string{
+				"some/file",
+			},
+		},
+		&PipelineSourceConf{
+			Type:    "files",
+			Sources: []string{},
+		},
+		&PipelineSourceConf{
+			Type:    "files",
+			Sources: nil,
+		},
+		&PipelineSourceConf{
+			Type: "files",
+			Sources: []string{
+				"",
+			},
+		},
+	}
+
+	for _, conf := range confs {
+		gen, err := conf.ToPipelineSourceGenerator()
+		assert.Nil(gen)
+		assert.NotNil(err)
+	}
+
+}
+
+func TestProcessorConfErrors(t *testing.T) {
+	t.Parallel()
+	assert := assert.New(t)
+
+	confs := []*ProcessorConf{
+		// No generator
+		&ProcessorConf{
+			Name:      "",
+			Generator: "",
+		},
+		// Processor doesn't exist
+		&ProcessorConf{
+			Name: "foo",
+		},
+		// Preprocessor doesn't exist
+		&ProcessorConf{
+			Name:          "Test",
+			Generator:     "passthrough",
+			HasLogstream:  true,
+			Preprocessors: []string{"foo"},
+		},
+		// Preprocessor blank
+		&ProcessorConf{
+			Name:          "Test",
+			Generator:     "passthrough",
+			HasLogstream:  true,
+			Preprocessors: []string{""},
+		},
+		////// Filters //////
+		// Empty filter
+		&ProcessorConf{
+			Name:         "Test",
+			Generator:    "passthrough",
+			HasLogstream: true,
+			Filters: []*FilterConf{
+				&FilterConf{
+					Type:   "simple",
+					Filter: "",
+				},
+			},
+		},
+		// Invalid filter type
+		&ProcessorConf{
+			Name:         "Test",
+			Generator:    "passthrough",
+			HasLogstream: true,
+			Filters: []*FilterConf{
+				&FilterConf{
+					Type:   "foo",
+					Filter: "bar",
+				},
+			},
+		},
+		// Invalid custom filter
+		&ProcessorConf{
+			Name:         "Test",
+			Generator:    "passthrough",
+			HasLogstream: true,
+			Filters: []*FilterConf{
+				&FilterConf{
+					Type:   "custom",
+					Filter: "foo",
+				},
+			},
+		},
+		///// Parsers ////
+		// Blank parser
+		&ProcessorConf{
+			Name:         "Test",
+			Generator:    "passthrough",
+			HasLogstream: true,
+			Parsers:      []string{""},
+		},
+		// Invalid
+		&ProcessorConf{
+			Name:         "Test",
+			Generator:    "passthrough",
+			HasLogstream: true,
+			Parsers:      []string{"foo"},
+		},
+	}
+
+	env := NewEnvironment()
+	env.Processors["passthrough"] = &passThroughProcessorGen{}
+
+	for _, conf := range confs {
+		err := conf.validate(env)
+		assert.NotNil(err)
+	}
+}
+
+func TestBuilderFilters(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	assert := assert.New(t)
+
+	manager := &countingResultsManager{
+		counts: make(map[string]int),
+	}
+
+	env := NewEnvironment()
+	env.Processors["counter"] = &countingProcessorGen{manager}
+	env.Filters["thermal"] = func(s string) bool {
+		return strings.Contains(s, "thermal_temp: sensor_id")
+	}
+
+	confStrings := []string{
+		`
+processors:
+  - name: counter
+    has_logstream: true
+    filters:
+      - type: simple
+        filter: "thermal_temp: sensor_id"
+source:
+  type: files
+  sources: ["./test/*.log"]
+sink_name: "counter"
+`,
+		`
+processors:
+  - name: counter
+    has_logstream: true
+    filters:
+      - type: regex
+        filter: "^.*thermal_temp: sensor_id.*$"
+source:
+  type: files
+  sources: ["./test/*.log"]
+sink_name: "counter"
+`,
+		`
+processors:
+  - name: counter
+    has_logstream: true
+    filters:
+      - type: custom
+        filter: thermal
+source:
+  type: files
+  sources: ["./test/*.log"]
+sink_name: "counter"
+`,
+	}
+
+	for _, confString := range confStrings {
+
+		manager.counts = make(map[string]int)
+
+		conf, err := RunnerConfFromString(confString)
+		require.Nil(err)
+		require.NotNil(conf)
+
+		runner, err := conf.ToRunner(env)
+		require.Nil(err)
+		require.NotNil(runner)
+
+		errs := runner.Run()
+		assert.Equal(0, len(errs))
+
+		t.Log(manager.counts)
+
+		c1 := manager.counts["test/test.log"]
+		c2 := manager.counts["test/test.10000.log"]
+		assert.Equal(1416, c1+c2)
+	}
 }
