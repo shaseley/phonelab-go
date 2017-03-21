@@ -15,28 +15,34 @@ func TestRunnerConfFromString(t *testing.T) {
 
 	specString := `
 max_concurrency: 5
+data_collector: "resultsCollector"
 source:
   type: files
   sources:
     - "path/to/some/file"
     - "path/to/some/other/file"
-pipeline:
-  filters:
-    - type: "simple"
-      filter: "foo&&bar"
-    - type: "custom"
-      filter: "baz"
-    - type: "regex"
-      filter: "^sometext.*othertext.*$"
-  parsers: ["tag1", "tag2"]
-  processors: ["proc1"]
+processors:
+  - name: proc1
+    description: "Test processor"
+    inputs: []
+    parsers: ["tag1", "tag2"]
+    filters:
+      - type: "simple"
+        filter: "foo&&bar"
+      - type: "custom"
+        filter: "baz"
+      - type: "regex"
+        filter: "^sometext.*othertext.*$"
+    has_logstream: true
+sink_name: proc1
 `
 	spec, err := RunnerConfFromString(specString)
 	require.Nil(err)
 	require.NotNil(spec)
 
-	expected := &PipelineRunnerConf{
+	expected := &RunnerConf{
 		MaxConcurrency: 5,
+		DataCollector:  "resultsCollector",
 		SourceConf: &PipelineSourceConf{
 			Type: PipelineSourceFile,
 			Sources: []string{
@@ -44,104 +50,129 @@ pipeline:
 				"path/to/some/other/file",
 			},
 		},
-		PipelineConf: &PipelineConf{
-			Filters: []*FilterConf{
-				&FilterConf{
-					Type:   FilterTypeSimple,
-					Filter: "foo&&bar",
-				},
-				&FilterConf{
-					Type:   FilterTypeCustom,
-					Filter: "baz",
-				},
-				&FilterConf{
-					Type:   FilterTypeRegex,
-					Filter: "^sometext.*othertext.*$",
+		Processors: []*ProcessorConf{
+			&ProcessorConf{
+				Name:         "proc1",
+				Description:  "Test processor",
+				Inputs:       []string{},
+				HasLogstream: true,
+				Parsers:      []string{"tag1", "tag2"},
+
+				Filters: []*FilterConf{
+					&FilterConf{
+						Type:   FilterTypeSimple,
+						Filter: "foo&&bar",
+					},
+					&FilterConf{
+						Type:   FilterTypeCustom,
+						Filter: "baz",
+					},
+					&FilterConf{
+						Type:   FilterTypeRegex,
+						Filter: "^sometext.*othertext.*$",
+					},
 				},
 			},
-			Parsers:    []string{"tag1", "tag2"},
-			Processors: []string{"proc1"},
 		},
+		SinkName: "proc1",
 	}
 
 	require.True(reflect.DeepEqual(expected.SourceConf, spec.SourceConf))
-	require.True(reflect.DeepEqual(expected.PipelineConf, spec.PipelineConf))
+	require.True(reflect.DeepEqual(expected.Processors, spec.Processors))
 	require.True(reflect.DeepEqual(expected, spec))
 }
 
-func TestRunnerConfWithPreProcFromString(t *testing.T) {
+func TestRunnerConfDependencies(t *testing.T) {
 	t.Parallel()
 
 	require := require.New(t)
 	assert := assert.New(t)
 
-	specString := `
-max_concurrency: 5
-source:
-  type: files
-  sources:
-    - "path/to/some/file"
-    - "path/to/some/other/file"
-preprocessors:
-  - filters:
-      - type: "simple"
-        filter: "sf1"
-    parsers: ["tag3", "tag4"]
-    processors: ["preproc1"]
-pipeline:
-  filters:
-    - type: simple
-      filter: "foo&&bar"
-    - type: custom
-      filter: "baz"
-  parsers: ["tag1", "tag2"]
-  processors: ["proc1"]
+	confString := `
+processors:
+  - name: proc1
+    inputs: [proc2]
+  - name: proc2
+    inputs: [proc3]
+  - name: proc3
+    inputs: [proc4]
+  - name: proc4
+    inputs: []
+sink_name: proc1
 `
-	spec, err := RunnerConfFromString(specString)
-	require.NotNil(spec)
+	conf, err := RunnerConfFromString(confString)
 	require.Nil(err)
+	require.NotNil(conf)
 
-	expected := &PipelineRunnerConf{
-		MaxConcurrency: 5,
-		SourceConf: &PipelineSourceConf{
-			Type: PipelineSourceFile,
-			Sources: []string{
-				"path/to/some/file",
-				"path/to/some/other/file",
-			},
-		},
-		Preprocessors: []*PipelineConf{
-			&PipelineConf{
-				Filters: []*FilterConf{
-					&FilterConf{
-						Type:   FilterTypeSimple,
-						Filter: "sf1",
-					},
-				},
-				Parsers:    []string{"tag3", "tag4"},
-				Processors: []string{"preproc1"},
-			},
-		},
-		PipelineConf: &PipelineConf{
-			Filters: []*FilterConf{
-				&FilterConf{
-					Type:   FilterTypeSimple,
-					Filter: "foo&&bar",
-				},
-				&FilterConf{
-					Type:   FilterTypeCustom,
-					Filter: "baz",
-				},
-			},
-			Parsers:    []string{"tag1", "tag2"},
-			Processors: []string{"proc1"},
-		},
+	// This doesn't have to populated (yet)
+	// TODO: Fix.
+	env := NewEnvironment()
+
+	dg, err := conf.dependencyGraph(env)
+	require.Nil(err)
+	require.NotNil(dg)
+
+	assert.Equal(4, len(dg.NodeMap))
+
+	var ok bool
+
+	_, ok = dg.NodeMap["proc1"]
+	assert.True(ok)
+	_, ok = dg.NodeMap["proc2"]
+	assert.True(ok)
+	_, ok = dg.NodeMap["proc3"]
+	assert.True(ok)
+	_, ok = dg.NodeMap["proc4"]
+	assert.True(ok)
+
+	topSort, err := dg.TopSort()
+	require.Nil(err)
+	require.Equal(4, len(topSort))
+
+	// There's only one ordering here.
+	expected := []string{
+		"proc1",
+		"proc2",
+		"proc3",
+		"proc4",
 	}
+	assert.Equal(expected, topSort)
+}
 
-	assert.True(reflect.DeepEqual(expected.Preprocessors, spec.Preprocessors))
-	assert.True(reflect.DeepEqual(expected.SourceConf, spec.SourceConf))
-	assert.True(reflect.DeepEqual(expected.PipelineConf, spec.PipelineConf))
-	assert.True(reflect.DeepEqual(expected, spec))
+func TestRunnerConfDependencyCycle(t *testing.T) {
+	t.Parallel()
+
+	require := require.New(t)
+	assert := assert.New(t)
+
+	confString := `
+processors:
+  - name: proc1
+    inputs: [proc2]
+  - name: proc2
+    inputs: [proc3]
+  - name: proc3
+    inputs: [proc4]
+  - name: proc4
+    inputs: [proc2]
+sink_name: proc1
+`
+	conf, err := RunnerConfFromString(confString)
+	require.Nil(err)
+	require.NotNil(conf)
+
+	// This doesn't have to populated (yet)
+	// TODO: Fix.
+	env := NewEnvironment()
+
+	dg, err := conf.dependencyGraph(env)
+	require.Nil(err)
+	require.NotNil(dg)
+
+	assert.Equal(4, len(dg.NodeMap))
+
+	_, err = dg.TopSort()
+	require.NotNil(err)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -233,11 +264,13 @@ func TestBuilderPipeline(t *testing.T) {
 	env.Processors["counter"] = &countingProcessorGen{manager}
 
 	confString := `
+processors:
+  - name: counter
+    has_logstream: true
 source:
   type: files
   sources: ["./test/*.log"]
-pipeline:
-  processors: ["counter"]
+sink_name: "counter"
 `
 	conf, err := RunnerConfFromString(confString)
 	require.Nil(err)
@@ -249,7 +282,9 @@ pipeline:
 
 	t.Log(runner.Source)
 
-	runner.Run()
+	errs := runner.Run()
+	assert.Equal(0, len(errs))
+
 	t.Log(manager.counts)
 
 	assert.Equal(5000, manager.counts["test/test.log"])
@@ -258,7 +293,7 @@ pipeline:
 
 // Test a two-node pipeline.  The first node rejects every other line, and the
 // next node counts the lines.
-func TestBuilderPipelineMult(t *testing.T) {
+func TestBuilderPipelinePreprocessors(t *testing.T) {
 	t.Parallel()
 
 	require := require.New(t)
@@ -276,8 +311,12 @@ func TestBuilderPipelineMult(t *testing.T) {
 source:
   type: files
   sources: ["./test/*.log"]
-pipeline:
-  processors: ["skip_odd", "counter"]
+processors:
+  - name: main
+    generator: "counter"
+    preprocessors: ["skip_odd"]
+    has_logstream: true
+sink_name: main
 `
 	conf, err := RunnerConfFromString(confString)
 	require.Nil(err)
@@ -359,7 +398,7 @@ func (gen *checkProcessorGen) GenerateProcessor(source *PipelineSourceInstance) 
 // much - they simply pass the line on. However, because everything is hooked
 // up with Timeweavers, there is an expected order. Also, we should each
 // logline N times.
-func TestBuilderPipelinePreproc(t *testing.T) {
+func TestBuilderPipelineMultInputs(t *testing.T) {
 	t.Parallel()
 
 	require := require.New(t)
@@ -379,12 +418,20 @@ func TestBuilderPipelinePreproc(t *testing.T) {
 source:
   type: files
   sources: ["./test/*.log"]
-preprocessors:
-  - processors: ["passthrough"]
-  - processors: ["passthrough"]
-  - processors: ["passthrough"]
-pipeline:
-  processors: ["checker"]
+processors:
+  - name: checker
+    has_logstream: true
+    inputs: ["pp1", "pp2", "pp3"]
+  - name: pp1
+    generator: "passthrough"
+    has_logstream: true
+  - name: pp2
+    generator: "passthrough"
+    has_logstream: true
+  - name: pp3
+    generator: "passthrough"
+    has_logstream: true
+sink_name: checker
 `
 	conf, err := RunnerConfFromString(confString)
 	require.Nil(err)
@@ -450,8 +497,11 @@ data_collector: "test"
 source:
   type: files
   sources: ["./test/*.log"]
-pipeline:
-  processors: ["passthrough"]
+processors:
+  - name: main
+    generator: passthrough
+    has_logstream: true
+sink_name: main
 `
 	conf, err := RunnerConfFromString(confString)
 	require.Nil(err)
@@ -467,4 +517,81 @@ pipeline:
 
 	// The processors handle the checking.
 	runner.Run()
+}
+
+func TestBuilderProcessorConf(t *testing.T) {
+	t.Parallel()
+	assert := assert.New(t)
+	require := require.New(t)
+
+	confString := `
+- name: "test"
+  description: "A test processor"
+  inputs: ["A", "B"]
+  has_logstream: true
+  filters:
+    - type: "simple"
+      filter: "foo&&bar"
+    - type: "custom"
+      filter: "baz"
+    - type: "regex"
+      filter: "^sometext.*othertext.*$"
+  parsers: ["Some-Tag", "Some-Other-Tag"]
+`
+
+	confs, err := ProcessorConfsFromString(confString)
+	require.Nil(err)
+	require.NotNil(confs)
+	require.Equal(1, len(confs))
+
+	expected := &ProcessorConf{
+		Name:         "test",
+		Description:  "A test processor",
+		Inputs:       []string{"A", "B"},
+		HasLogstream: true,
+		Filters: []*FilterConf{
+			&FilterConf{
+				Type:   FilterTypeSimple,
+				Filter: "foo&&bar",
+			},
+			&FilterConf{
+				Type:   FilterTypeCustom,
+				Filter: "baz",
+			},
+			&FilterConf{
+				Type:   FilterTypeRegex,
+				Filter: "^sometext.*othertext.*$",
+			},
+		},
+		Parsers: []string{"Some-Tag", "Some-Other-Tag"},
+	}
+
+	assert.True(reflect.DeepEqual(expected, confs[0]))
+}
+
+func TestIsYamlList(t *testing.T) {
+	t.Parallel()
+	assert := assert.New(t)
+
+	tests := []struct {
+		conf     string
+		expected bool
+	}{
+		{"foo: bar", false},
+		{"- foo: bar", true},
+		{`# this is a list
+- foo: bar"`, true},
+		{`
+# this also
+# is a list
+- foo: bar"`, true},
+		{`
+# But not this
+foo: bar"`, false},
+	}
+
+	for _, test := range tests {
+		assert.Equal(test.expected, isYamlList(test.conf))
+	}
+
 }

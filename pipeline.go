@@ -37,7 +37,7 @@ type Pipeline struct {
 // Build a Pipeline configured to get its input from source.
 type PipelineBuilder interface {
 	// Instantiate the pipline using the given source info.
-	BuildPipeline(source *PipelineSourceInstance) *Pipeline
+	BuildPipeline(source *PipelineSourceInstance) (*Pipeline, error)
 }
 
 // DataCollectors generally don't know anything about the source of their data,
@@ -69,9 +69,12 @@ func NewRunner(gen PipelineSourceGenerator, dc DataCollector, plb PipelineBuilde
 	}
 }
 
-func (r *Runner) runOne(source *PipelineSourceInstance, done chan int) {
+func (r *Runner) runOne(source *PipelineSourceInstance, done chan error) {
 	// Build it
-	pipeline := r.Builder.BuildPipeline(source)
+	pipeline, err := r.Builder.BuildPipeline(source)
+	if err != nil {
+		done <- err
+	}
 
 	// Start the processing
 	resChan := pipeline.LastHop.Process()
@@ -81,14 +84,15 @@ func (r *Runner) runOne(source *PipelineSourceInstance, done chan int) {
 		r.Collector.OnData(res)
 	}
 
-	done <- 1
+	done <- nil
 }
 
 // Synchronsously run the processor for all data sources.
-func (runner *Runner) Run() {
+func (runner *Runner) Run() []error {
 	running := 0
 	sourceChan := runner.Source.Process()
-	done := make(chan int)
+	done := make(chan error)
+	allErrors := make([]error, 0)
 
 	for source := range sourceChan {
 		// Do we have a spot?
@@ -102,9 +106,13 @@ func (runner *Runner) Run() {
 	}
 
 	for running > 0 {
-		<-done
+		err := <-done
+		if err != nil {
+			allErrors = append(allErrors, err)
+		}
 		running -= 1
 	}
 
 	runner.Collector.Finish()
+	return allErrors
 }

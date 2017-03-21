@@ -39,14 +39,14 @@ func newTestDataCollector() *totalDataCollector {
 	}
 }
 
-func (t *totalDataCollector) BuildPipeline(source *PipelineSourceInstance) *Pipeline {
+func (t *totalDataCollector) BuildPipeline(source *PipelineSourceInstance) (*Pipeline, error) {
 	// Normally, there will be at least one node before the source.
 	// We'll fake that with a pass through handler.
 	processor := &totalProcessor{source.Processor}
 
 	return &Pipeline{
 		LastHop: processor,
-	}
+	}, nil
 }
 
 func (t *totalDataCollector) OnData(data interface{}) {
