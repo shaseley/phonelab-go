@@ -74,6 +74,7 @@ func (r *Runner) runOne(source *PipelineSourceInstance, done chan error) {
 	pipeline, err := r.Builder.BuildPipeline(source)
 	if err != nil {
 		done <- err
+		return
 	}
 
 	// Start the processing
