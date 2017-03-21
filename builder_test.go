@@ -3,17 +3,34 @@ package phonelab
 import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"io/ioutil"
+	"os"
 	"reflect"
 	"sync"
 	"testing"
 )
+
+func confToTextFile(conf string) (string, error) {
+	// Same thing, but from a file
+	tempfile, err := ioutil.TempFile("", "pl-go")
+	if err != nil {
+		return "", err
+	}
+	defer tempfile.Close()
+
+	name := tempfile.Name()
+
+	_, err = tempfile.Write([]byte(conf))
+
+	return name, err
+}
 
 func TestRunnerConfFromString(t *testing.T) {
 	t.Parallel()
 
 	require := require.New(t)
 
-	specString := `
+	confString := `
 max_concurrency: 5
 data_collector: "resultsCollector"
 source:
@@ -36,9 +53,9 @@ processors:
     has_logstream: true
 sink_name: proc1
 `
-	spec, err := RunnerConfFromString(specString)
+	conf, err := RunnerConfFromString(confString)
 	require.Nil(err)
-	require.NotNil(spec)
+	require.NotNil(conf)
 
 	expected := &RunnerConf{
 		MaxConcurrency: 5,
@@ -77,9 +94,53 @@ sink_name: proc1
 		SinkName: "proc1",
 	}
 
-	require.True(reflect.DeepEqual(expected.SourceConf, spec.SourceConf))
-	require.True(reflect.DeepEqual(expected.Processors, spec.Processors))
-	require.True(reflect.DeepEqual(expected, spec))
+	require.True(reflect.DeepEqual(expected.SourceConf, conf.SourceConf))
+	require.True(reflect.DeepEqual(expected.Processors, conf.Processors))
+	require.True(reflect.DeepEqual(expected, conf))
+
+	// Same thing, but from a file
+	name, err := confToTextFile(confString)
+	if len(name) == 0 {
+		defer os.Remove(name)
+	}
+	require.Nil(err)
+
+	conf, err = RunnerConfFromFile(name)
+	require.NotNil(conf)
+	require.Nil(err)
+
+	require.True(reflect.DeepEqual(expected.SourceConf, conf.SourceConf))
+	require.True(reflect.DeepEqual(expected.Processors, conf.Processors))
+	require.True(reflect.DeepEqual(expected, conf))
+}
+
+func TestRunnerConfYamlErr(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	assert := assert.New(t)
+
+	confString := `
+sink_name: foo
+processors missing colon`
+
+	conf, err := RunnerConfFromString(confString)
+	require.NotNil(err)
+	require.Nil(conf)
+
+	// Same thing, but from a file
+	name, err := confToTextFile(confString)
+	if len(name) == 0 {
+		defer os.Remove(name)
+	}
+	require.Nil(err)
+
+	conf, err = RunnerConfFromFile(name)
+	assert.Nil(conf)
+	assert.NotNil(err)
+
+	conf, err = RunnerConfFromFile("fooooo.yml")
+	assert.Nil(conf)
+	assert.NotNil(err)
 }
 
 func TestRunnerConfDependencies(t *testing.T) {
@@ -538,11 +599,20 @@ func TestBuilderProcessorConf(t *testing.T) {
       filter: "^sometext.*othertext.*$"
   parsers: ["Some-Tag", "Some-Other-Tag"]
 `
-
-	confs, err := ProcessorConfsFromString(confString)
-	require.Nil(err)
-	require.NotNil(confs)
-	require.Equal(1, len(confs))
+	confString2 := `
+name: "test"
+description: "A test processor"
+inputs: ["A", "B"]
+has_logstream: true
+filters:
+  - type: "simple"
+    filter: "foo&&bar"
+  - type: "custom"
+    filter: "baz"
+  - type: "regex"
+    filter: "^sometext.*othertext.*$"
+parsers: ["Some-Tag", "Some-Other-Tag"]
+`
 
 	expected := &ProcessorConf{
 		Name:         "test",
@@ -566,7 +636,44 @@ func TestBuilderProcessorConf(t *testing.T) {
 		Parsers: []string{"Some-Tag", "Some-Other-Tag"},
 	}
 
-	assert.True(reflect.DeepEqual(expected, confs[0]))
+	var err error
+	var confs []*ProcessorConf
+	var name string
+
+	for i := 0; i < 4; i++ {
+		switch i {
+		case 0:
+			confs, err = ProcessorConfsFromString(confString)
+			name = ""
+		case 1:
+			confs, err = ProcessorConfsFromString(confString2)
+			name = ""
+		case 2:
+			name, err := confToTextFile(confString)
+			if err == nil {
+				confs, err = ProcessorConfsFromFile(name)
+			}
+		case 3:
+			name, err := confToTextFile(confString2)
+			if err == nil {
+				confs, err = ProcessorConfsFromFile(name)
+			}
+		}
+
+		if len(name) == 0 {
+			defer os.Remove(name)
+		}
+
+		require.Nil(err)
+		require.NotNil(confs)
+		require.Equal(1, len(confs))
+
+		assert.True(reflect.DeepEqual(expected, confs[0]))
+	}
+
+	confs, err = ProcessorConfsFromFile("fooooo.yml")
+	assert.Equal(0, len(confs))
+	assert.NotNil(err)
 }
 
 func TestIsYamlList(t *testing.T) {
@@ -588,6 +695,8 @@ func TestIsYamlList(t *testing.T) {
 		{`
 # But not this
 foo: bar"`, false},
+		{`
+# Or this`, false},
 	}
 
 	for _, test := range tests {
