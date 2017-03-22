@@ -538,9 +538,30 @@ func (conf *ProcessorConf) buildProcessor(state *plBuilderState) (Processor, err
 		return proc, nil
 	}
 
+	// Processors may get input from loglines and/or other processors.  When we
+	// have more than one processor, we need to take a slightly complicated
+	// approach. Processors may emit data at any rate, and may need to emit
+	// data that goes backwards compared to the timestamps of their input
+	// stream. Our approach is to create multiple input streams at the file
+	// level, and merge them back together as one, ordered stream.
+	//
+	// So, we need to do the following:
+	//  1) Build the main pipeline filter/parser
+	//	2) Build a pipeline for each preprocessor stream. We do this by
+	//	   recursively calling buildProcessor for each input.
+	//	3) Merge all of these streams together
+	//	4) Build and pass the data to the main processor.
+	//  5) If this processor is passed to multiple processors, put a Muxer
+	//     behind it to multiplex our output stream.
+
+	// For files, we can just invoke Process() multiple times.  We can't
+	// use a muxer because that sends the same object, which would be fine
+	// if we had unlimited memory! But we dont, so we leave it on disk
+	// until we can process it. TODO: Can we do better?
+
 	inputs := make([]Processor, 0)
 
-	// Build the logline input processing chain for _this_ processor.
+	// (1) Build the logline input processing chain for _this_ processor.
 	// This will get stitches with other input (if needed) later.
 	if conf.HasLogstream {
 		if logPipeline, err := conf.buildLoglineSource(state.env, state.sourceInst.Processor,
@@ -551,8 +572,7 @@ func (conf *ProcessorConf) buildProcessor(state *plBuilderState) (Processor, err
 		}
 	}
 
-	// Combine the log pipeline (if we have one) with any other inputs. First,
-	// get each other processor.
+	// (2) Get each other processor we depend on
 	for _, depName := range conf.Inputs {
 		if node, ok := state.graph.NodeMap[depName]; !ok {
 			return nil, fmt.Errorf("Cannot find processor conf for '%v'", depName)
@@ -563,12 +583,13 @@ func (conf *ProcessorConf) buildProcessor(state *plBuilderState) (Processor, err
 		}
 	}
 
+	// (3) Combine the log pipeline (if we have one) with any other inputs.
 	input := stitchInputs(inputs)
 	if input == nil {
 		return nil, fmt.Errorf("No inputs and no log processor for '%v'", conf.Name)
 	}
 
-	// Finally, make an instance of our processor with the newly stitched inputs.
+	// (4) Finally, make an instance of our processor with the newly stitched inputs.
 	genName := conf.GeneratorName()
 
 	procGen, ok := state.env.Processors[genName]
@@ -581,9 +602,9 @@ func (conf *ProcessorConf) buildProcessor(state *plBuilderState) (Processor, err
 		Processor: input,
 	})
 
-	// One last thing: we might need to multiplex our output. If we have more than
-	// one in edge in the dependency graph, then our output goes to more than one
-	// processor, so, we'll wrap it in muxer.
+	// (5) One last thing: we might need to multiplex our output. If we have
+	// more than one in edge in the dependency graph, then our output goes to
+	// more than one processor, so, we'll wrap it in muxer.
 	if node, ok := state.graph.NodeMap[conf.Key()]; !ok {
 		return nil, fmt.Errorf("Cannot find processor conf for '%v'", conf.Key())
 	} else if len(node.EdgesIn) > 1 {
@@ -591,14 +612,12 @@ func (conf *ProcessorConf) buildProcessor(state *plBuilderState) (Processor, err
 		proc = NewMuxer(proc, len(node.EdgesIn))
 	}
 
-	// Cache it
+	// Lastly, cache it
 	state.procMap[conf.Key()] = proc
 
 	return proc, nil
 }
 
-// This assumes the configuration makes sense and was checked by validate().
-// FIXME: This probably isn't the best assumption.
 func (proc *RunnerConfProcessor) BuildPipeline(sourceInst *PipelineSourceInstance) (*Pipeline, error) {
 	// First, get the sink processor conf. We'll build the actual pipeline graph
 	// from there.
@@ -607,7 +626,7 @@ func (proc *RunnerConfProcessor) BuildPipeline(sourceInst *PipelineSourceInstanc
 		return nil, fmt.Errorf("Cannot find sink processor '%v'", proc.Conf.SinkName)
 	}
 
-	// Heavy lifting
+	// Heavy lifting is done by buildProcessor; we just provide the context.
 	source, err := sinkProc.buildProcessor(&plBuilderState{
 		procMap:    make(map[string]Processor),
 		sourceInst: sourceInst,
@@ -619,55 +638,6 @@ func (proc *RunnerConfProcessor) BuildPipeline(sourceInst *PipelineSourceInstanc
 		return nil, err
 	}
 
-	// TODO: Move comment
-	/*
-		if len(proc.Preprocessors) == 0 {
-			// In the simple case, we have no preprocessors or state trackers.
-			// Here, we don't need to split the input and we can create a linear
-			// pipeline.
-			source = proc.Conf.buildFullPipeline(proc.Env, source, sourceInst.Info)
-		} else {
-			// When we have preprocessors, we need to take a more complicated
-			// approach. Preprocessors may emit data at any rate, and may need to
-			// emit data that goes backwards compared to the timestamps of their
-			// input stream. Our approach is to create multiple input streams at the
-			// file level, and merge them back together as one, ordered stream.
-			//
-			// So, we need to do the following:
-			//	1) Split the input for |preprocessors| + 1
-			//	2) Build a pipeline for each preprocessor stream
-			//	3) Build the main pipeline filter/parser
-			//	4) Merge all of these streams together
-			//	5) Build and Pass the data to the main pipeline.
-
-			// For files, we can just invoke Process() multiple times.  We can't
-			// use a muxer because that sends the same object, which would be fine
-			// if we had unlimited memory! But we dont, so we leave it on disk
-			// until we can process it. TODO: Can we do better?
-
-			// (1) and (2)
-			pipelines := make([]Processor, 0)
-
-			for _, ppConf := range proc.Preprocessors {
-				pipelines = append(pipelines,
-					ppConf.buildFullPipeline(proc.Env, source, sourceInst.Info))
-			}
-
-			// (3)
-			source = proc.Conf.buildInitialProcessing(proc.Env, source)
-			pipelines = append(pipelines, source)
-
-			// (4)
-			source = NewTimeweaverProcessor(pipelines[0], pipelines[1])
-
-			for i := 2; i < len(pipelines); i++ {
-				source = NewTimeweaverProcessor(source, pipelines[i])
-			}
-
-			// (5)
-			source = proc.Conf.buildProcessors(proc.Env, source, sourceInst.Info)
-		}
-	*/
 	return &Pipeline{
 		LastHop: source,
 	}, nil

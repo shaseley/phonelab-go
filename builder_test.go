@@ -166,8 +166,6 @@ sink_name: proc1
 	require.Nil(err)
 	require.NotNil(conf)
 
-	// This doesn't have to populated (yet)
-	// TODO: Fix.
 	env := NewEnvironment()
 
 	dg, err := conf.dependencyGraph(env)
@@ -223,8 +221,6 @@ sink_name: proc1
 	require.Nil(err)
 	require.NotNil(conf)
 
-	// This doesn't have to populated (yet)
-	// TODO: Fix.
 	env := NewEnvironment()
 
 	dg, err := conf.dependencyGraph(env)
