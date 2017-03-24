@@ -4,7 +4,7 @@ package phonelab
 type ParserGen func() Parser
 
 type ProcessorGen interface {
-	GenerateProcessor(info *PipelineSourceInstance) Processor
+	GenerateProcessor(info *PipelineSourceInstance, kwargs map[string]interface{}) Processor
 }
 
 type DataCollectorGen func() DataCollector

@@ -52,7 +52,8 @@ processors:
       - type: "regex"
         filter: "^sometext.*othertext.*$"
     has_logstream: true
-sink_name: proc1
+sink:
+  name: proc1
 `
 	conf, err := RunnerConfFromString(confString)
 	require.Nil(err)
@@ -72,7 +73,7 @@ sink_name: proc1
 			&ProcessorConf{
 				Name:         "proc1",
 				Description:  "Test processor",
-				Inputs:       []string{},
+				Inputs:       []*ProcessorInputConf{},
 				HasLogstream: true,
 				Parsers:      []string{"tag1", "tag2"},
 
@@ -92,7 +93,7 @@ sink_name: proc1
 				},
 			},
 		},
-		SinkName: "proc1",
+		Sink: &ProcessorInputConf{Name: "proc1"},
 	}
 
 	require.True(reflect.DeepEqual(expected.SourceConf, conf.SourceConf))
@@ -121,7 +122,8 @@ func TestRunnerConfYamlErr(t *testing.T) {
 	assert := assert.New(t)
 
 	confString := `
-sink_name: foo
+sink:
+  name: foo
 processors missing colon`
 
 	conf, err := RunnerConfFromString(confString)
@@ -153,14 +155,14 @@ func TestRunnerConfDependencies(t *testing.T) {
 	confString := `
 processors:
   - name: proc1
-    inputs: [proc2]
+    inputs: [{name: proc2}]
   - name: proc2
-    inputs: [proc3]
+    inputs: [{name: proc3}]
   - name: proc3
-    inputs: [proc4]
+    inputs: [{name: proc4}]
   - name: proc4
-    inputs: []
-sink_name: proc1
+sink:
+  name: proc1
 `
 	conf, err := RunnerConfFromString(confString)
 	require.Nil(err)
@@ -208,14 +210,15 @@ func TestRunnerConfDependencyCycle(t *testing.T) {
 	confString := `
 processors:
   - name: proc1
-    inputs: [proc2]
+    inputs: [{name: proc2}]
   - name: proc2
-    inputs: [proc3]
+    inputs: [{name: proc3}]
   - name: proc3
-    inputs: [proc4]
+    inputs: [{name: proc4}]
   - name: proc4
-    inputs: [proc2]
-sink_name: proc1
+    inputs: [{name: proc2}]
+sink:
+  name: proc1
 `
 	conf, err := RunnerConfFromString(confString)
 	require.Nil(err)
@@ -227,6 +230,7 @@ sink_name: proc1
 	require.Nil(err)
 	require.NotNil(dg)
 
+	t.Log(dg.NodeMap)
 	assert.Equal(4, len(dg.NodeMap))
 
 	_, err = dg.TopSort()
@@ -241,11 +245,18 @@ type countingProcessorGen struct {
 	manager *countingResultsManager
 }
 
-func (c *countingProcessorGen) GenerateProcessor(source *PipelineSourceInstance) Processor {
+func (c *countingProcessorGen) GenerateProcessor(source *PipelineSourceInstance, kwargs map[string]interface{}) Processor {
+
+	increment := 1
+	if v, ok := kwargs["increment"]; ok {
+		increment = v.(int)
+	}
+
 	return NewSimpleProcessor(source.Processor, &countingHandler{
-		count:    0,
-		filename: source.Info["file_name"].(string),
-		manager:  c.manager,
+		count:     0,
+		increment: increment,
+		filename:  source.Info["file_name"].(string),
+		manager:   c.manager,
 	})
 }
 
@@ -263,13 +274,14 @@ func (m *countingResultsManager) Finish(filename string, count int) {
 
 // Count lines in files
 type countingHandler struct {
-	filename string
-	count    int
-	manager  *countingResultsManager
+	filename  string
+	count     int
+	increment int
+	manager   *countingResultsManager
 }
 
 func (proc *countingHandler) Handle(log interface{}) interface{} {
-	proc.count += 1
+	proc.count += proc.increment
 	return nil
 }
 
@@ -283,7 +295,8 @@ func (proc *countingHandler) Finish() {
 // Generate processors
 type skipProcessorGen struct{}
 
-func (s *skipProcessorGen) GenerateProcessor(source *PipelineSourceInstance) Processor {
+func (s *skipProcessorGen) GenerateProcessor(source *PipelineSourceInstance,
+	kwargs map[string]interface{}) Processor {
 	return NewSimpleProcessor(source.Processor, &skipProcessor{})
 }
 
@@ -328,7 +341,8 @@ processors:
 source:
   type: files
   sources: ["./test/*.log"]
-sink_name: "counter"
+sink:
+  name: "counter"
 `
 	conf, err := RunnerConfFromString(confString)
 	require.Nil(err)
@@ -372,9 +386,11 @@ source:
 processors:
   - name: main
     generator: "counter"
-    preprocessors: ["skip_odd"]
+    preprocessors:
+      - name: "skip_odd"
     has_logstream: true
-sink_name: main
+sink:
+  name: main
 `
 	conf, err := RunnerConfFromString(confString)
 	require.Nil(err)
@@ -398,7 +414,8 @@ sink_name: main
 // Generate pass through processors
 type passThroughProcessorGen struct{}
 
-func (c *passThroughProcessorGen) GenerateProcessor(source *PipelineSourceInstance) Processor {
+func (c *passThroughProcessorGen) GenerateProcessor(source *PipelineSourceInstance,
+	kwargs map[string]interface{}) Processor {
 	return NewSimpleProcessor(source.Processor, &passThroughHandler{})
 }
 
@@ -439,7 +456,8 @@ type checkProcessorGen struct {
 	manager *countingResultsManager
 }
 
-func (gen *checkProcessorGen) GenerateProcessor(source *PipelineSourceInstance) Processor {
+func (gen *checkProcessorGen) GenerateProcessor(source *PipelineSourceInstance,
+	kwargs map[string]interface{}) Processor {
 	cp := &checkProcessorHandler{
 		lastLine:  0,
 		lineCount: 0,
@@ -479,7 +497,10 @@ source:
 processors:
   - name: checker
     has_logstream: true
-    inputs: ["pp1", "pp2", "pp3"]
+    inputs:
+      - name: pp1
+      - name: pp2
+      - name: pp3
   - name: pp1
     generator: "passthrough"
     has_logstream: true
@@ -489,7 +510,8 @@ processors:
   - name: pp3
     generator: "passthrough"
     has_logstream: true
-sink_name: checker
+sink:
+  name: checker
 `
 	conf, err := RunnerConfFromString(confString)
 	require.Nil(err)
@@ -559,7 +581,8 @@ processors:
   - name: main
     generator: passthrough
     has_logstream: true
-sink_name: main
+sink:
+  name: main
 `
 	conf, err := RunnerConfFromString(confString)
 	require.Nil(err)
@@ -585,7 +608,12 @@ func TestBuilderProcessorConf(t *testing.T) {
 	confString := `
 - name: "test"
   description: "A test processor"
-  inputs: ["A", "B"]
+  inputs:
+    - name: A
+      args:
+        foo: 1
+        bar: "baz"
+    - name: B
   has_logstream: true
   filters:
     - type: "simple"
@@ -599,7 +627,12 @@ func TestBuilderProcessorConf(t *testing.T) {
 	confString2 := `
 name: "test"
 description: "A test processor"
-inputs: ["A", "B"]
+inputs:
+  - name: A
+    args:
+      foo: 1
+      bar: "baz"
+  - name: B
 has_logstream: true
 filters:
   - type: "simple"
@@ -612,9 +645,21 @@ parsers: ["Some-Tag", "Some-Other-Tag"]
 `
 
 	expected := &ProcessorConf{
-		Name:         "test",
-		Description:  "A test processor",
-		Inputs:       []string{"A", "B"},
+		Name:        "test",
+		Description: "A test processor",
+		Inputs: []*ProcessorInputConf{
+			&ProcessorInputConf{
+				Name: "A",
+				Args: map[string]interface{}{
+					"foo": 1,
+					"bar": "baz",
+				},
+			},
+			&ProcessorInputConf{
+				Name: "B",
+				Args: nil,
+			},
+		},
 		HasLogstream: true,
 		Filters: []*FilterConf{
 			&FilterConf{
@@ -716,7 +761,9 @@ func (lc *lineCount) MonotonicTimestamp() float64 {
 // Generate processors
 type lineCountProcessorGen struct{}
 
-func (lc *lineCountProcessorGen) GenerateProcessor(source *PipelineSourceInstance) Processor {
+func (lc *lineCountProcessorGen) GenerateProcessor(source *PipelineSourceInstance,
+	kwargs map[string]interface{}) Processor {
+
 	return NewSimpleProcessor(source.Processor, &lineCountProcessor{})
 }
 
@@ -785,26 +832,31 @@ processors:
     has_logstream: true
 
   - name: p1
-    inputs: ["lc"]
+    inputs: [{name: lc}]
     generator: passthrough
 
   - name: p2
-    inputs: ["lc"]
+    inputs: [{name: lc}]
     generator: passthrough
 
   - name: p3
-    inputs: ["lc"]
+    inputs: [{name: lc}]
     generator: passthrough
 
   - name: p4
-    inputs: ["lc"]
+    inputs: [{name: lc}]
     generator: passthrough
 
   - name: main
     generator: passthrough
-    inputs: ["p1", "p2", "p3", "p4"]
+    inputs:
+      - name: p1
+      - name: p2
+      - name: p3
+      - name: p4
 
-sink_name: main
+sink:
+  name:  main
 `
 	conf, err := RunnerConfFromString(confString)
 	require.Nil(err)
@@ -875,22 +927,30 @@ func TestProcessorConfErrors(t *testing.T) {
 		},
 		// Preprocessor doesn't exist
 		&ProcessorConf{
-			Name:          "Test",
-			Generator:     "passthrough",
-			HasLogstream:  true,
-			Preprocessors: []string{"foo"},
+			Name:         "Test1",
+			Generator:    "passthrough",
+			HasLogstream: true,
+			Preprocessors: []*ProcessorInputConf{
+				&ProcessorInputConf{
+					Name: "foo",
+				},
+			},
 		},
 		// Preprocessor blank
 		&ProcessorConf{
-			Name:          "Test",
-			Generator:     "passthrough",
-			HasLogstream:  true,
-			Preprocessors: []string{""},
+			Name:         "Test2",
+			Generator:    "passthrough",
+			HasLogstream: true,
+			Preprocessors: []*ProcessorInputConf{
+				&ProcessorInputConf{
+					Name: "",
+				},
+			},
 		},
 		////// Filters //////
 		// Empty filter
 		&ProcessorConf{
-			Name:         "Test",
+			Name:         "Test3",
 			Generator:    "passthrough",
 			HasLogstream: true,
 			Filters: []*FilterConf{
@@ -902,7 +962,7 @@ func TestProcessorConfErrors(t *testing.T) {
 		},
 		// Invalid filter type
 		&ProcessorConf{
-			Name:         "Test",
+			Name:         "Test4",
 			Generator:    "passthrough",
 			HasLogstream: true,
 			Filters: []*FilterConf{
@@ -914,7 +974,7 @@ func TestProcessorConfErrors(t *testing.T) {
 		},
 		// Invalid custom filter
 		&ProcessorConf{
-			Name:         "Test",
+			Name:         "Test5",
 			Generator:    "passthrough",
 			HasLogstream: true,
 			Filters: []*FilterConf{
@@ -927,14 +987,14 @@ func TestProcessorConfErrors(t *testing.T) {
 		///// Parsers ////
 		// Blank parser
 		&ProcessorConf{
-			Name:         "Test",
+			Name:         "Test6",
 			Generator:    "passthrough",
 			HasLogstream: true,
 			Parsers:      []string{""},
 		},
 		// Invalid
 		&ProcessorConf{
-			Name:         "Test",
+			Name:         "Test7",
 			Generator:    "passthrough",
 			HasLogstream: true,
 			Parsers:      []string{"foo"},
@@ -947,6 +1007,9 @@ func TestProcessorConfErrors(t *testing.T) {
 	for _, conf := range confs {
 		err := conf.validate(env)
 		assert.NotNil(err)
+		if err == nil {
+			t.Log(conf)
+		}
 	}
 }
 
@@ -976,7 +1039,8 @@ processors:
 source:
   type: files
   sources: ["./test/*.log"]
-sink_name: "counter"
+sink:
+  name: "counter"
 `,
 		`
 processors:
@@ -988,7 +1052,8 @@ processors:
 source:
   type: files
   sources: ["./test/*.log"]
-sink_name: "counter"
+sink:
+  name: "counter"
 `,
 		`
 processors:
@@ -1000,7 +1065,8 @@ processors:
 source:
   type: files
   sources: ["./test/*.log"]
-sink_name: "counter"
+sink:
+  name: "counter"
 `,
 	}
 
@@ -1025,4 +1091,96 @@ sink_name: "counter"
 		c2 := manager.counts["test/test.10000.log"]
 		assert.Equal(1416, c1+c2)
 	}
+}
+
+func TestBuilderArgPassing1(t *testing.T) {
+	t.Parallel()
+	assert := assert.New(t)
+	require := require.New(t)
+
+	manager := &countingResultsManager{
+		counts: make(map[string]int),
+	}
+
+	env := NewEnvironment()
+	env.Processors["counter"] = &countingProcessorGen{manager}
+	env.Processors["passthrough"] = &passThroughProcessorGen{}
+
+	confString := `
+processors:
+  - name: counter
+    has_logstream: true
+
+  - name: main
+    generator: passthrough
+    inputs:
+      - name: counter
+        args:
+          increment: 5
+source:
+  type: files
+  sources: ["./test/*.log"]
+sink:
+  name: "main"
+`
+	conf, err := RunnerConfFromString(confString)
+	require.Nil(err)
+	require.NotNil(conf)
+
+	runner, err := conf.ToRunner(env)
+	require.Nil(err)
+	require.NotNil(runner)
+
+	t.Log(runner.Source)
+
+	errs := runner.Run()
+	assert.Equal(0, len(errs))
+
+	t.Log(manager.counts)
+
+	assert.Equal(5000*5, manager.counts["test/test.log"])
+	assert.Equal(10000*5, manager.counts["test/test.10000.log"])
+}
+
+func TestBuilderArgPassing2(t *testing.T) {
+	t.Parallel()
+	assert := assert.New(t)
+	require := require.New(t)
+
+	manager := &countingResultsManager{
+		counts: make(map[string]int),
+	}
+
+	env := NewEnvironment()
+	env.Processors["counter"] = &countingProcessorGen{manager}
+
+	confString := `
+processors:
+  - name: counter
+    has_logstream: true
+source:
+  type: files
+  sources: ["./test/*.log"]
+sink:
+  name: "counter"
+  args:
+    increment: 4
+`
+	conf, err := RunnerConfFromString(confString)
+	require.Nil(err)
+	require.NotNil(conf)
+
+	runner, err := conf.ToRunner(env)
+	require.Nil(err)
+	require.NotNil(runner)
+
+	t.Log(runner.Source)
+
+	errs := runner.Run()
+	assert.Equal(0, len(errs))
+
+	t.Log(manager.counts)
+
+	assert.Equal(5000*4, manager.counts["test/test.log"])
+	assert.Equal(10000*4, manager.counts["test/test.10000.log"])
 }

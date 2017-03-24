@@ -24,7 +24,7 @@ type RunnerConf struct {
 	DataCollector  string              `yaml:"data_collector"`  // DataCollector to hook up to the sink
 	SourceConf     *PipelineSourceConf `yaml:"source"`          // Source specification
 	Processors     []*ProcessorConf    `yaml:"processors"`      // Custom processors that are defined here (as opposed to in a separate file).
-	SinkName       string              `yaml:"sink_name"`       // Name of the sink/last-hop processor.
+	Sink           *ProcessorInputConf `yaml:"sink"`            // The sink/last-hop processor/args.
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -60,18 +60,23 @@ type FilterConf struct {
 ////////////////////////////////////////////////////////////////////////////////
 // Processor Configuration
 
+type ProcessorInputConf struct {
+	Name string                 `yaml:"name"`
+	Args map[string]interface{} `yaml:"args"`
+}
+
 type ProcessorConf struct {
 	// Metadata
 	Name        string `yaml:"name"`
 	Description string `yaml:"description"`
 
 	// Pipleine config
-	Inputs        []string      `yaml:"inputs"`        // A list of dependencies, i.e. input sources
-	HasLogstream  bool          `yaml:"has_logstream"` // Whether or not it requires parsed loglines
-	Filters       []*FilterConf `yaml:"filters"`       // Filters to apply to log strings
-	Preprocessors []string      `yaml:"preprocessors"` // A list of preprocessor node names
-	Parsers       []string      `yaml:"parsers"`       // A list of parsers to use
-	Generator     string        `yaml:"generator"`     // The generator name for the processor. If empty, use name.
+	Inputs        []*ProcessorInputConf `yaml:"inputs"`        // A list of dependencies, i.e. input sources
+	HasLogstream  bool                  `yaml:"has_logstream"` // Whether or not it requires parsed loglines
+	Filters       []*FilterConf         `yaml:"filters"`       // Filters to apply to log strings
+	Preprocessors []*ProcessorInputConf `yaml:"preprocessors"` // A list of preprocessor node names
+	Parsers       []string              `yaml:"parsers"`       // A list of parsers to use
+	Generator     string                `yaml:"generator"`     // The generator name for the processor. If empty, use name.
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -213,13 +218,11 @@ func (conf *ProcessorConf) validate(env *Environment) error {
 
 	// Preprocessors are "dumb" and don't require a configuration. These are
 	// designed to be chained together linearly, rather than as a tree.
-	for _, list := range [][]string{conf.Preprocessors} {
-		for _, depName := range list {
-			if len(depName) == 0 {
-				return errors.New("Invalid preprocessor name: name cannot be empty.")
-			} else if _, ok := env.Processors[depName]; !ok {
-				return errors.New("Unknown Processor: " + depName)
-			}
+	for _, dep := range conf.Preprocessors {
+		if len(dep.Name) == 0 {
+			return errors.New("Invalid preprocessor name: name cannot be empty.")
+		} else if _, ok := env.Processors[dep.Name]; !ok {
+			return errors.New("Unknown Processor: " + dep.Name)
 		}
 	}
 
@@ -334,14 +337,14 @@ func (conf *ProcessorConf) buildLoglineSource(env *Environment, source Processor
 	source = conf.buildParserProc(env, source)
 
 	// Add on any preprocessors
-	for _, procName := range conf.Preprocessors {
-		if procGen, ok := env.Processors[procName]; !ok {
-			return nil, errors.New("Cannot find processor " + procName)
+	for _, proc := range conf.Preprocessors {
+		if procGen, ok := env.Processors[proc.Name]; !ok {
+			return nil, errors.New("Cannot find processor " + proc.Name)
 		} else {
 			source = procGen.GenerateProcessor(&PipelineSourceInstance{
 				Info:      info,
 				Processor: source,
-			})
+			}, proc.Args)
 		}
 	}
 
@@ -368,9 +371,9 @@ func (p *ProcessorConf) Key() string {
 func (conf *RunnerConf) dependencyGraph(env *Environment) (*depgraph.DependencyGraph, error) {
 	seen := make(map[string]bool)
 
-	root := conf.findProcessor(conf.SinkName)
+	root := conf.findProcessor(conf.Sink.Name)
 	if root == nil {
-		return nil, errors.New("Cannot find sink processor '" + conf.SinkName + "'.")
+		return nil, errors.New("Cannot find sink processor '" + conf.Sink.Name + "'.")
 	}
 
 	graph := depgraph.New(make([]depgraph.Keyer, 0))
@@ -393,16 +396,16 @@ func (conf *RunnerConf) dependencyGraph(env *Environment) (*depgraph.DependencyG
 
 		// Handle its sources
 		for _, dep := range n.Inputs {
-			if !seen[dep] {
-				proc := conf.findProcessor(dep)
+			if !seen[dep.Name] {
+				proc := conf.findProcessor(dep.Name)
 				if proc == nil {
 					return nil, fmt.Errorf("Cannot find input processor '%v' for processor '%v'", dep, n.Key())
 				}
-				seen[dep] = true
+				seen[dep.Name] = true
 				toProcess = append(toProcess, proc)
 
 				// Add it to the graph if needed
-				if _, ok := graph.NodeMap[dep]; !ok {
+				if _, ok := graph.NodeMap[dep.Name]; !ok {
 					graph.AddNode(proc)
 				}
 			}
@@ -410,7 +413,7 @@ func (conf *RunnerConf) dependencyGraph(env *Environment) (*depgraph.DependencyG
 			// Add the edge
 			if err := graph.AddDependency(&depgraph.Dependency{
 				Dependent:   n.Key(),
-				DependentOn: dep,
+				DependentOn: dep.Name,
 			}); err != nil {
 				return nil, err
 			}
@@ -531,7 +534,8 @@ func stitchInputs(processors []Processor) Processor {
 
 // Build the processor specified by the conf, building any other processors
 // needed.
-func (conf *ProcessorConf) buildProcessor(state *plBuilderState) (Processor, error) {
+func (conf *ProcessorConf) buildProcessor(state *plBuilderState,
+	args map[string]interface{}) (Processor, error) {
 
 	// Is it cached?
 	if proc, ok := state.procMap[conf.Key()]; ok {
@@ -573,10 +577,10 @@ func (conf *ProcessorConf) buildProcessor(state *plBuilderState) (Processor, err
 	}
 
 	// (2) Get each other processor we depend on
-	for _, depName := range conf.Inputs {
-		if node, ok := state.graph.NodeMap[depName]; !ok {
-			return nil, fmt.Errorf("Cannot find processor conf for '%v'", depName)
-		} else if otherProc, err := node.Value.(*ProcessorConf).buildProcessor(state); err != nil {
+	for _, dep := range conf.Inputs {
+		if node, ok := state.graph.NodeMap[dep.Name]; !ok {
+			return nil, fmt.Errorf("Cannot find processor conf for '%v'", dep.Name)
+		} else if otherProc, err := node.Value.(*ProcessorConf).buildProcessor(state, dep.Args); err != nil {
 			return nil, err
 		} else {
 			inputs = append(inputs, otherProc)
@@ -600,7 +604,7 @@ func (conf *ProcessorConf) buildProcessor(state *plBuilderState) (Processor, err
 	proc := procGen.GenerateProcessor(&PipelineSourceInstance{
 		Info:      state.sourceInst.Info,
 		Processor: input,
-	})
+	}, args)
 
 	// (5) One last thing: we might need to multiplex our output. If we have
 	// more than one in edge in the dependency graph, then our output goes to
@@ -621,9 +625,9 @@ func (conf *ProcessorConf) buildProcessor(state *plBuilderState) (Processor, err
 func (proc *RunnerConfProcessor) BuildPipeline(sourceInst *PipelineSourceInstance) (*Pipeline, error) {
 	// First, get the sink processor conf. We'll build the actual pipeline graph
 	// from there.
-	sinkProc := proc.Conf.findProcessor(proc.Conf.SinkName)
+	sinkProc := proc.Conf.findProcessor(proc.Conf.Sink.Name)
 	if sinkProc == nil {
-		return nil, fmt.Errorf("Cannot find sink processor '%v'", proc.Conf.SinkName)
+		return nil, fmt.Errorf("Cannot find sink processor '%v'", proc.Conf.Sink.Name)
 	}
 
 	// Heavy lifting is done by buildProcessor; we just provide the context.
@@ -632,7 +636,7 @@ func (proc *RunnerConfProcessor) BuildPipeline(sourceInst *PipelineSourceInstanc
 		sourceInst: sourceInst,
 		env:        proc.Env,
 		graph:      proc.DepGraph,
-	})
+	}, proc.Conf.Sink.Args)
 
 	if err != nil {
 		return nil, err
