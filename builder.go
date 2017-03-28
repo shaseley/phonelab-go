@@ -3,12 +3,14 @@ package phonelab
 import (
 	"errors"
 	"fmt"
+	"io/ioutil"
+	"os"
+	"path/filepath"
+	"strings"
+
 	"github.com/bmatcuk/doublestar"
 	"github.com/shaseley/depgraph"
 	yaml "gopkg.in/yaml.v2"
-	"io/ioutil"
-	"os"
-	"strings"
 )
 
 // Build a pipeline from a yaml file.
@@ -33,7 +35,8 @@ type RunnerConf struct {
 type PipelineSourceType string
 
 const (
-	PipelineSourceFile PipelineSourceType = "files"
+	PipelineSourceFile     PipelineSourceType = "files"
+	PipelineSourcePhonelab                    = "phonelab"
 )
 
 type PipelineSourceConf struct {
@@ -167,15 +170,20 @@ func ProcessorConfsFromFile(file string) ([]*ProcessorConf, error) {
 // Convert the source specification into something that can generate loglines.
 func (conf *PipelineSourceConf) ToPipelineSourceGenerator() (PipelineSourceGenerator, error) {
 
+	if len(conf.Sources) == 0 {
+		return nil, errors.New("Missing sources specification in runner conf.")
+	}
+
+	allFiles := make([]string, 0)
+	errHandler := func(err error) {
+		panic(err)
+	}
 	switch conf.Type {
 	default:
 		return nil, errors.New("Invalid type specification: " + string(conf.Type))
 	case PipelineSourceFile:
-		if len(conf.Sources) == 0 {
-			return nil, errors.New("Missing sources specification in runner conf.")
-		}
-
-		allFiles := make([]string, 0)
+		fallthrough
+	case PipelineSourcePhonelab:
 
 		for _, source := range conf.Sources {
 			if len(source) == 0 {
@@ -187,13 +195,31 @@ func (conf *PipelineSourceConf) ToPipelineSourceGenerator() (PipelineSourceGener
 				allFiles = append(allFiles, files...)
 			}
 		}
-
-		errHandler := func(err error) {
-			panic(err)
-		}
-
-		return NewTextFileSourceGenerator(allFiles, errHandler), nil
 	}
+
+	switch conf.Type {
+	case PipelineSourceFile:
+		return NewTextFileSourceGenerator(allFiles, errHandler), nil
+	case PipelineSourcePhonelab:
+		// FIXME: Currently, we're assuming that each 'source' is
+		// finding an info.json. Given this assumption, the device is
+		// the parent directory to each info.json.
+		devicePaths := make(map[string][]string)
+		for _, file := range allFiles {
+			parent, err := filepath.Abs(filepath.Dir(file))
+			if err != nil {
+				return nil, fmt.Errorf("Failed to find absolute path: %v", err)
+			}
+			device := filepath.Base(parent)
+			basePath := filepath.Dir(parent)
+			if _, ok := devicePaths[device]; !ok {
+				devicePaths[device] = make([]string, 0)
+			}
+			devicePaths[device] = append(devicePaths[device], basePath)
+		}
+		return NewPhonelabSourceGenerator(devicePaths, errHandler), nil
+	}
+	return nil, errors.New("Invalid type specification: " + string(conf.Type))
 }
 
 func (conf *ProcessorConf) GeneratorName() string {
