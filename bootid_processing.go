@@ -4,39 +4,56 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"sort"
 
 	"github.com/bmatcuk/doublestar"
 	"github.com/gurupras/go-easyfiles"
+	"github.com/gurupras/go-hdfs-doublestar"
+	"github.com/gurupras/phonelab-go/hdfs"
+	log "github.com/sirupsen/logrus"
 )
 
 type PhonelabSourceProcessor struct {
 	Path      string
 	Device    string
 	Bootid    string
+	HdfsAddr  string
 	bootFiles []string
 	ErrHandler
 }
 
-func NewPhonelabSourceProcessor(path, device, bootid string, errHandler ErrHandler) (*PhonelabSourceProcessor, error) {
+func NewPhonelabSourceProcessor(path, device, bootid, hdfsAddr string, errHandler ErrHandler) (*PhonelabSourceProcessor, error) {
 	bootPath := filepath.Join(path, device, bootid)
-	bootFiles, err := doublestar.Glob(filepath.Join(bootPath, "*.gz"))
+	client, err := hdfs.NewHdfsClient(hdfsAddr)
+	if err != nil {
+		return nil, err
+	}
+	var bootFiles []string
+	if client != nil {
+		bootFiles, err = hdfs_doublestar.Glob(client, filepath.Join(bootPath, "*.gz"))
+	} else {
+		bootFiles, err = doublestar.Glob(filepath.Join(bootPath, "*.gz"))
+	}
 	if err != nil {
 		return nil, err
 	}
 	sort.Strings(bootFiles)
-	return &PhonelabSourceProcessor{path, device, bootid, bootFiles, errHandler}, nil
+	return &PhonelabSourceProcessor{path, device, bootid, hdfsAddr, bootFiles, errHandler}, nil
 }
 
 func (psp *PhonelabSourceProcessor) Process() <-chan interface{} {
 	outChan := make(chan interface{})
 
+	client, err := hdfs.NewHdfsClient(psp.HdfsAddr)
+	if err != nil {
+		panic(fmt.Sprintf("Unable to connect to HDFS namenode at '%v': %v", psp.HdfsAddr, err))
+	}
+
 	go func() {
 		for _, bootFile := range psp.bootFiles {
-			file, err := easyfiles.Open(bootFile, os.O_RDONLY, easyfiles.GZ_UNKNOWN)
+			file, err := hdfs.OpenFile(bootFile, os.O_RDONLY, easyfiles.GZ_TRUE, client)
 			if err != nil {
 				if psp.ErrHandler != nil {
 					psp.ErrHandler(err)
@@ -44,17 +61,17 @@ func (psp *PhonelabSourceProcessor) Process() <-chan interface{} {
 					panic(fmt.Sprintf("Failed to Open '%v': %v", bootFile, err))
 				}
 			}
-			reader, err := file.Reader(0)
+			scanner, err := file.Reader(0)
 			if err != nil {
 				if psp.ErrHandler != nil {
 					psp.ErrHandler(err)
 				} else {
-					panic(fmt.Sprintf("Failed to get reader to '%v': %v", bootFile, err))
+					panic(fmt.Sprintf("Failed to get scanner to '%v': %v", bootFile, err))
 				}
 			}
-			reader.Split(bufio.ScanLines)
-			for reader.Scan() {
-				line := reader.Text()
+			scanner.Split(bufio.ScanLines)
+			for scanner.Scan() {
+				line := scanner.Text()
 				outChan <- line
 			}
 		}
@@ -65,21 +82,29 @@ func (psp *PhonelabSourceProcessor) Process() <-chan interface{} {
 
 type PhonelabSourceGenerator struct {
 	devicePaths map[string][]string
+	hdfsAddr    string
 	ErrHandler
 }
 
-func NewPhonelabSourceGenerator(devicePaths map[string][]string, errHandler ErrHandler) *PhonelabSourceGenerator {
-	return &PhonelabSourceGenerator{devicePaths, errHandler}
+func NewPhonelabSourceGenerator(devicePaths map[string][]string, hdfsAddr string, errHandler ErrHandler) *PhonelabSourceGenerator {
+	return &PhonelabSourceGenerator{devicePaths, hdfsAddr, errHandler}
 }
 
 func (psg *PhonelabSourceGenerator) Process() <-chan *PipelineSourceInstance {
 	sourceChan := make(chan *PipelineSourceInstance)
 
+	client, err := hdfs.NewHdfsClient(psg.hdfsAddr)
+	if err != nil {
+		panic(fmt.Sprintf("Unable to connect to HDFS namenode at '%v': %v", psg.hdfsAddr, err))
+	}
+
+	log.Debugf("Paths: %v", psg.devicePaths)
+
 	go func() {
 		for device, basePaths := range psg.devicePaths {
 			for _, basePath := range basePaths {
 				infoJsonPath := filepath.Join(basePath, device, "info.json")
-				if data, err := ioutil.ReadFile(infoJsonPath); err != nil {
+				if data, err := hdfs.ReadFile(infoJsonPath, client); err != nil {
 					if psg.ErrHandler != nil {
 						psg.ErrHandler(err)
 					} else {
@@ -101,8 +126,9 @@ func (psg *PhonelabSourceGenerator) Process() <-chan *PipelineSourceInstance {
 						info["deviceid"] = device
 						info["bootid"] = bootid
 						info["basePath"] = basePath
+						info["hdfsAddr"] = psg.hdfsAddr
 
-						psp, err := NewPhonelabSourceProcessor(basePath, device, bootid, psg.ErrHandler)
+						psp, err := NewPhonelabSourceProcessor(basePath, device, bootid, psg.hdfsAddr, psg.ErrHandler)
 						if err != nil {
 							if psg.ErrHandler != nil {
 								psg.ErrHandler(err)

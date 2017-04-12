@@ -9,7 +9,10 @@ import (
 	"strings"
 
 	"github.com/bmatcuk/doublestar"
+	"github.com/gurupras/go-hdfs-doublestar"
+	"github.com/gurupras/phonelab-go/hdfs"
 	"github.com/shaseley/depgraph"
+	log "github.com/sirupsen/logrus"
 	yaml "gopkg.in/yaml.v2"
 )
 
@@ -40,8 +43,9 @@ const (
 )
 
 type PipelineSourceConf struct {
-	Type    PipelineSourceType `yaml:"type"`
-	Sources []string           `yaml:"sources"`
+	Type     PipelineSourceType `yaml:"type"`
+	HdfsAddr string             `yaml:"hdfsAddr"`
+	Sources  []string           `yaml:"sources"`
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -169,7 +173,6 @@ func ProcessorConfsFromFile(file string) ([]*ProcessorConf, error) {
 
 // Convert the source specification into something that can generate loglines.
 func (conf *PipelineSourceConf) ToPipelineSourceGenerator() (PipelineSourceGenerator, error) {
-
 	if len(conf.Sources) == 0 {
 		return nil, errors.New("Missing sources specification in runner conf.")
 	}
@@ -184,12 +187,25 @@ func (conf *PipelineSourceConf) ToPipelineSourceGenerator() (PipelineSourceGener
 	case PipelineSourceFile:
 		fallthrough
 	case PipelineSourcePhonelab:
-
 		for _, source := range conf.Sources {
 			if len(source) == 0 {
-				return nil, errors.New("Invalid source file: empty name")
+				return nil, fmt.Errorf("Invalid source file: empty name")
 			}
-			if files, err := doublestar.Glob(source); err != nil {
+			client, err := hdfs.NewHdfsClient(conf.HdfsAddr)
+			if err != nil {
+				return nil, fmt.Errorf("Failed to connect to HDFS name node: %v", err)
+			}
+			log.Infof("Connected to hdfs at address: %v", conf.HdfsAddr)
+
+			var files []string
+			if client != nil {
+				// We're in HDFS mode
+				files, err = hdfs_doublestar.Glob(client, source)
+				log.Infof("HDFS glob result: %v", files)
+			} else {
+				files, err = doublestar.Glob(source)
+			}
+			if err != nil {
 				return nil, fmt.Errorf("Error globbing files: %v", err)
 			} else {
 				allFiles = append(allFiles, files...)
@@ -217,7 +233,7 @@ func (conf *PipelineSourceConf) ToPipelineSourceGenerator() (PipelineSourceGener
 			}
 			devicePaths[device] = append(devicePaths[device], basePath)
 		}
-		return NewPhonelabSourceGenerator(devicePaths, errHandler), nil
+		return NewPhonelabSourceGenerator(devicePaths, conf.HdfsAddr, errHandler), nil
 	}
 	return nil, errors.New("Invalid type specification: " + string(conf.Type))
 }
@@ -479,6 +495,7 @@ func (conf *RunnerConf) ToRunner(env *Environment) (*Runner, error) {
 	}
 
 	// Sources
+	log.Debugf("SourceConf: %v", conf.SourceConf)
 	gen, err := conf.SourceConf.ToPipelineSourceGenerator()
 	if err != nil {
 		return nil, err

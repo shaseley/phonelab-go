@@ -11,7 +11,7 @@ func TestPhonelabSourceProcessor(t *testing.T) {
 
 	assert := assert.New(t)
 
-	processor, err := NewPhonelabSourceProcessor("./test/phonelab_source", "test-device-1", "bootid-0", func(e error) {
+	processor, err := NewPhonelabSourceProcessor("./test/phonelab_source", "test-device-1", "bootid-0", "", func(e error) {
 		t.Log("Error: ", e)
 		t.FailNow()
 	})
@@ -36,7 +36,7 @@ func TestMultPhonelabSourceProcessor(t *testing.T) {
 	devicePaths["test-device-1"] = []string{"./test/phonelab_source"}
 	devicePaths["test-device-2"] = []string{"./test/phonelab_source"}
 
-	gen := NewPhonelabSourceGenerator(devicePaths, func(e error) {
+	gen := NewPhonelabSourceGenerator(devicePaths, "", func(e error) {
 		t.Log("Error: ", e)
 		t.FailNow()
 	})
@@ -84,7 +84,7 @@ func TestPhonelabSourceProcessorMux(t *testing.T) {
 
 	const NUM_OPENS = 10
 
-	processor, err := NewPhonelabSourceProcessor("./test/phonelab_source", "test-device-1", "bootid-0", func(e error) {
+	processor, err := NewPhonelabSourceProcessor("./test/phonelab_source", "test-device-1", "bootid-0", "", func(e error) {
 		t.Log("Error: ", e)
 		t.FailNow()
 	})
