@@ -112,10 +112,8 @@ func splitCmdPreRunE(cmd *cobra.Command, args []string) error {
 		return errors.New("Invalid command syntax")
 	}
 
-	if fi, err := os.Stat(args[0]); err != nil {
-		return fmt.Errorf("Error stating conf file: %v", err)
-	} else if fi.IsDir() {
-		return errors.New("Conf file cannot be a directory")
+	if err := validateFile(args[0], "conf file"); err != nil {
+		return err
 	}
 
 	if fi, err := os.Stat(args[1]); err != nil {
