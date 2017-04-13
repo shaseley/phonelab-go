@@ -1,9 +1,11 @@
 package phonelab
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestPhonelabSourceProcessor(t *testing.T) {
@@ -110,4 +112,50 @@ func TestPhonelabSourceProcessorMux(t *testing.T) {
 	}
 
 	assert.Equal(10000*NUM_OPENS, allLogs)
+}
+
+// Make sure stuff works while parsing yamls
+func TestPhonelabYaml(t *testing.T) {
+	t.Parallel()
+
+	require := require.New(t)
+	assert := assert.New(t)
+
+	manager := &countingResultsManager{
+		counts: make(map[string]int),
+	}
+
+	env := NewEnvironment()
+	env.Processors["counter"] = &countingProcessorGen{manager}
+
+	confString := `
+source:
+  type: phonelab
+  sources: ["./test/phonelab_source/**/info.json"]
+processors:
+  - name: counter
+    has_logstream: true
+sink:
+  name: "counter"
+`
+	conf, err := RunnerConfFromString(confString)
+	require.Nil(err)
+	require.NotNil(conf)
+
+	runner, err := conf.ToRunner(env)
+	require.Nil(err)
+	require.NotNil(runner)
+
+	t.Log(runner.Source)
+
+	errs := runner.Run()
+	assert.Equal(0, len(errs))
+
+	t.Log(manager.counts)
+
+	assert.Equal(10000, manager.counts["test-device-1->bootid-0"], fmt.Sprintf("%v", manager.counts))
+	assert.Equal(10000, manager.counts["test-device-1->bootid-1"], fmt.Sprintf("%v", manager.counts))
+
+	assert.Equal(20000, manager.counts["test-device-2->bootid-0"], fmt.Sprintf("%v", manager.counts))
+	assert.Equal(20000, manager.counts["test-device-2->bootid-1"], fmt.Sprintf("%v", manager.counts))
 }

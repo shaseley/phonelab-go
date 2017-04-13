@@ -1,6 +1,7 @@
 package phonelab
 
 import (
+	"fmt"
 	"io/ioutil"
 	"os"
 	"reflect"
@@ -254,10 +255,21 @@ func (c *countingProcessorGen) GenerateProcessor(source *PipelineSourceInstance,
 		increment = v.(int)
 	}
 
+	var filename string
+	if _, ok := source.Info["file_name"]; ok {
+		filename = source.Info["file_name"].(string)
+	} else {
+		// No filename. Try to get bootid
+		if _, ok := source.Info["deviceid"]; !ok {
+			fmt.Fprintln(os.Stderr, "Did not find file_name or deviceid")
+			return nil
+		}
+		filename = fmt.Sprintf("%v->%v", source.Info["deviceid"].(string), source.Info["bootid"].(string))
+	}
 	return NewSimpleProcessor(source.Processor, &countingHandler{
 		count:     0,
 		increment: increment,
-		filename:  source.Info["file_name"].(string),
+		filename:  filename,
 		manager:   c.manager,
 	})
 }
