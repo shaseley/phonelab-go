@@ -1,14 +1,16 @@
 package phonelab
 
 import (
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 	"io/ioutil"
 	"os"
 	"reflect"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func confToTextFile(conf string) (string, error) {
@@ -1183,4 +1185,97 @@ sink:
 
 	assert.Equal(5000*4, manager.counts["test/test.log"])
 	assert.Equal(10000*4, manager.counts["test/test.10000.log"])
+}
+
+func TestExpandPipelineSourceConf(t *testing.T) {
+	t.Parallel()
+	assert := assert.New(t)
+	require := require.New(t)
+
+	conf := &PipelineSourceConf{
+		Type: "files",
+		Sources: []string{
+			"./test/*.log",
+		},
+	}
+
+	sources, err := conf.Expand()
+	assert.Nil(err)
+
+	sourceMap := make(map[string]bool)
+	for _, src := range sources {
+		sourceMap[src] = true
+	}
+
+	require.Equal(2, len(sourceMap))
+	assert.True(sourceMap["test/test.log"])
+	assert.True(sourceMap["test/test.10000.log"])
+}
+
+func TestSplitRunnerConf(t *testing.T) {
+	t.Parallel()
+	assert := assert.New(t)
+	require := require.New(t)
+
+	confString := `
+processors:
+  - name: main
+    has_logstream: true
+    inputs: [{name: input1}]
+source:
+  type: files
+  sources: ["test/*.log"]
+sink:
+  name: "main"
+  args:
+    arg1: 100
+    arg2: foo
+`
+	conf, err := RunnerConfFromString(confString)
+	require.Nil(err)
+	require.NotNil(conf)
+
+	expected := &RunnerConf{
+		Processors: []*ProcessorConf{
+			&ProcessorConf{
+				Name: "main",
+				Inputs: []*ProcessorInputConf{
+					&ProcessorInputConf{Name: "input1"},
+				},
+				HasLogstream: true,
+			},
+		},
+		SourceConf: &PipelineSourceConf{
+			Type: PipelineSourceFile,
+			Sources: []string{
+				"test/*.log",
+			},
+		},
+		Sink: &ProcessorInputConf{
+			Name: "main",
+			Args: map[string]interface{}{
+				"arg1": 100,
+				"arg2": "foo",
+			},
+		},
+	}
+
+	split, err := conf.ShallowSplit()
+	require.Nil(err)
+	require.Equal(2, len(split))
+
+	require.True(reflect.DeepEqual(expected, conf))
+
+	splitConfs, err := conf.ShallowSplit()
+	require.Nil(err)
+	require.Equal(2, len(splitConfs))
+
+	files := []string{"test/test.10000.log", "test/test.log"}
+	sort.Strings(files)
+
+	expected.SourceConf.Sources[0] = files[0]
+	assert.True(reflect.DeepEqual(expected, splitConfs[0]))
+
+	expected.SourceConf.Sources[0] = files[1]
+	assert.True(reflect.DeepEqual(expected, splitConfs[1]))
 }
