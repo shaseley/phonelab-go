@@ -164,8 +164,41 @@ func ProcessorConfsFromFile(file string) ([]*ProcessorConf, error) {
 	return ProcessorConfsFromString(string(data))
 }
 
+// Expand the conf into multiple confs, resolving globbing, etc.
+func (conf *PipelineSourceConf) Expand() ([]string, error) {
+	switch conf.Type {
+	default:
+		{
+			return nil, errors.New("Invalid type specification: " + string(conf.Type))
+		}
+	case PipelineSourceFile:
+		{
+			allFiles := make([]string, 0)
+
+			for _, source := range conf.Sources {
+				if len(source) == 0 {
+					return nil, errors.New("Invalid source file: empty name")
+				}
+				if files, err := doublestar.Glob(source); err != nil {
+					return nil, fmt.Errorf("Error globbing files: %v", err)
+				} else {
+					allFiles = append(allFiles, files...)
+				}
+			}
+
+			return allFiles, nil
+		}
+	}
+}
+
 // Convert the source specification into something that can generate loglines.
 func (conf *PipelineSourceConf) ToPipelineSourceGenerator() (PipelineSourceGenerator, error) {
+
+	expanded, err := conf.Expand()
+
+	if err != nil {
+		return nil, err
+	}
 
 	switch conf.Type {
 	default:
@@ -175,24 +208,15 @@ func (conf *PipelineSourceConf) ToPipelineSourceGenerator() (PipelineSourceGener
 			return nil, errors.New("Missing sources specification in runner conf.")
 		}
 
-		allFiles := make([]string, 0)
-
-		for _, source := range conf.Sources {
-			if len(source) == 0 {
-				return nil, errors.New("Invalid source file: empty name")
-			}
-			if files, err := doublestar.Glob(source); err != nil {
-				return nil, fmt.Errorf("Error globbing files: %v", err)
-			} else {
-				allFiles = append(allFiles, files...)
-			}
+		if len(expanded) == 0 {
+			return nil, errors.New("No files resolved from sources")
 		}
 
 		errHandler := func(err error) {
 			panic(err)
 		}
 
-		return NewTextFileSourceGenerator(allFiles, errHandler), nil
+		return NewTextFileSourceGenerator(expanded, errHandler), nil
 	}
 }
 
@@ -431,6 +455,31 @@ func validateProcessorConfs(graph *depgraph.DependencyGraph, env *Environment) e
 		}
 	}
 	return nil
+}
+
+func (conf *RunnerConf) ShallowSplit() ([]*RunnerConf, error) {
+	expanded, err := conf.SourceConf.Expand()
+	if err != nil {
+		return nil, err
+	} else if len(expanded) == 0 {
+		return nil, errors.New("No files resolved from sources")
+	}
+
+	origSource := conf.SourceConf
+	splitConfs := make([]*RunnerConf, 0, len(expanded))
+
+	for _, src := range expanded {
+		newSource := &PipelineSourceConf{
+			Type:    origSource.Type,
+			Sources: []string{src},
+		}
+		// Can't do this in C!
+		newConf := *conf
+		newConf.SourceConf = newSource
+		splitConfs = append(splitConfs, &newConf)
+	}
+
+	return splitConfs, nil
 }
 
 func (conf *RunnerConf) ToRunner(env *Environment) (*Runner, error) {
