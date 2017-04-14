@@ -510,8 +510,9 @@ func (conf *RunnerConf) ShallowSplit() ([]*RunnerConf, error) {
 
 	for _, src := range expanded {
 		newSource := &PipelineSourceConf{
-			Type:    origSource.Type,
-			Sources: []string{src},
+			Type:     origSource.Type,
+			HdfsAddr: origSource.HdfsAddr,
+			Sources:  []string{src},
 		}
 		// Can't do this in C!
 		newConf := *conf
