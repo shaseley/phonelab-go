@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -164,12 +165,11 @@ func (s *SubmissionServer) QueueJob(job *metaJob) (int, error) {
 	}
 
 	// Persist output
-	prefix := confFile[0 : len(confFile)-5]
 	count := 0
 
 	for _, conf := range splitConfs {
 		count += 1
-		outFile := fmt.Sprintf("%v_%v.yaml", prefix, count)
+		outFile := path.Join(path.Dir(confFile), fmt.Sprintf("conf_%v.yaml", count))
 
 		if bytes, err := yaml.Marshal(conf); err != nil {
 			return http.StatusInternalServerError, fmt.Errorf("Error marhaling Yaml: %v", err)
@@ -283,16 +283,50 @@ func routeSubmit(w http.ResponseWriter, r *http.Request) {
 func routeConf(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	fmt.Println(vars)
-	fmt.Println(r.URL)
+
+	id := vars["meta_id"]
+	index := vars["bean_id"]
+	dest := path.Join(server.JobDir, id, fmt.Sprintf("conf_%v.yaml", index))
+
+	if _, err := os.Stat(dest); err != nil {
+		sendErrorCode(w, http.StatusNotFound, err)
+		return
+	}
+
+	bytes, err := ioutil.ReadFile(dest)
+	if err != nil {
+		sendErrorCode(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", TextHeader)
 	w.WriteHeader(http.StatusOK)
+	fmt.Fprintf(w, "%v", string(bytes))
 }
 
 // GET /plugin/{id}
 func routePlugin(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
-	fmt.Println(vars)
-	fmt.Println(r.URL)
+	id := vars["meta_id"]
+	dest := path.Join(server.JobDir, id, PluginFileName)
+	logger.Println("plugin dest:", dest)
+
+	if _, err := os.Stat(dest); err != nil {
+		sendErrorCode(w, http.StatusNotFound, err)
+		return
+	}
+
+	bytes, err := ioutil.ReadFile(dest)
+	if err != nil {
+		sendErrorCode(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	pluginStr := base64.StdEncoding.EncodeToString(bytes)
+
+	w.Header().Set("Content-Type", TextHeader)
 	w.WriteHeader(http.StatusOK)
+	fmt.Fprintf(w, "%v", pluginStr)
 }
 
 // Download an individual file

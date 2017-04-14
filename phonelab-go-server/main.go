@@ -51,6 +51,8 @@ func main() {
 	go func() {
 		if err := mainCmd.Execute(); err != nil {
 			os.Exit(-1)
+		} else {
+			os.Exit(0)
 		}
 	}()
 

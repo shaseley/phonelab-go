@@ -19,13 +19,13 @@ var routes = []Route{
 	Route{
 		"conf",
 		"GET",
-		"/conf/{metaid}/{beanid}",
+		"/conf/{meta_id}/{bean_id}",
 		routeConf,
 	},
 	Route{
 		"plugin",
 		"GET",
-		"/plugin/{metaid}",
+		"/plugin/{meta_id}",
 		routePlugin,
 	},
 	Route{
