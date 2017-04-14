@@ -1,17 +1,14 @@
 package phonelab
 
 import (
-	"fmt"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"io/ioutil"
 	"os"
 	"reflect"
-	"sort"
 	"strings"
 	"sync"
 	"testing"
-
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func confToTextFile(conf string) (string, error) {
@@ -255,21 +252,10 @@ func (c *countingProcessorGen) GenerateProcessor(source *PipelineSourceInstance,
 		increment = v.(int)
 	}
 
-	var filename string
-	if _, ok := source.Info["file_name"]; ok {
-		filename = source.Info["file_name"].(string)
-	} else {
-		// No filename. Try to get bootid
-		if _, ok := source.Info["deviceid"]; !ok {
-			fmt.Fprintln(os.Stderr, "Did not find file_name or deviceid")
-			return nil
-		}
-		filename = fmt.Sprintf("%v->%v", source.Info["deviceid"].(string), source.Info["bootid"].(string))
-	}
 	return NewSimpleProcessor(source.Processor, &countingHandler{
 		count:     0,
 		increment: increment,
-		filename:  filename,
+		filename:  source.Info["file_name"].(string),
 		manager:   c.manager,
 	})
 }
@@ -1282,12 +1268,9 @@ sink:
 	require.Nil(err)
 	require.Equal(2, len(splitConfs))
 
-	files := []string{"test/test.10000.log", "test/test.log"}
-	sort.Strings(files)
-
-	expected.SourceConf.Sources[0] = files[0]
+	expected.SourceConf.Sources[0] = "test/test.10000.log"
 	assert.True(reflect.DeepEqual(expected, splitConfs[0]))
 
-	expected.SourceConf.Sources[0] = files[1]
+	expected.SourceConf.Sources[0] = "test/test.log"
 	assert.True(reflect.DeepEqual(expected, splitConfs[1]))
 }
