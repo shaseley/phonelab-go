@@ -112,20 +112,32 @@ func (w *PhoneLabWorker) runOneJob(id int64) error {
 	if err != nil {
 		panic(fmt.Sprintf("Unable to connect to beanstalk: %v", err))
 	}
+	defer conn.Close()
 
-	// Get all tubes
-	tubes, err := conn.ListTubes()
-	if err != nil {
-		logger.Fatalf("Error listing tubes: '%v'. Shutting down.\n", err)
-	}
+	var bid uint64
+	var body []byte
 
-	// Get a job from beanstalk from one of the tubes
-	logger.Printf("Worker %v retrieving job...\n", id)
+	// We loop here because we don't know when a new tube will be added.
+	// We keep the timeout relatively short and poll for tube changes.
+	// This would be far better if beanstalk allowed us to reserve a job on
+	// any tube.
+	for {
+		// Get all tubes
+		tubes, err := conn.ListTubes()
+		if err != nil {
+			logger.Fatalf("Error listing tubes: '%v'. Shutting down.\n", err)
+		}
 
-	ts := beanstalk.NewTubeSet(conn, tubes...)
-	bid, body, err := ts.Reserve(10 * time.Hour)
-	if err != nil {
-		return err
+		// Get a job from beanstalk from one of the tubes
+		logger.Printf("Worker %v retrieving job...\n", id)
+
+		ts := beanstalk.NewTubeSet(conn, tubes...)
+
+		bid, body, err = ts.Reserve(30 * time.Second)
+		if err != nil {
+			continue
+		}
+		break
 	}
 
 	logger.Printf("Worker %v starting job %v...\n", id, bid)
