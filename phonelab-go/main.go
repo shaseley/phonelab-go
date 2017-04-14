@@ -27,11 +27,19 @@ func initCommands() *cobra.Command {
 		Run:     runCmdRun,
 	}
 
+	submitCmd := &cobra.Command{
+		Use:     "submit <conf_file> <plugin>",
+		Short:   "Submit a phonelab-go experiment.",
+		Long:    "Submit a phonelab-go experiment using a yaml conf file and go plugin implementing EnvInit()",
+		PreRunE: submitCmdPreRunE,
+		Run:     submitCmdRun,
+	}
+
 	splitCmdInitFlags(splitCmd)
 	runCmdInitFlags(runCmd)
+	submitCmdInitFlags(submitCmd)
 
-	rootCmd.AddCommand(splitCmd)
-	rootCmd.AddCommand(runCmd)
+	rootCmd.AddCommand(runCmd, splitCmd, submitCmd)
 
 	return rootCmd
 }

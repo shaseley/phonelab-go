@@ -12,8 +12,10 @@ import (
 	"strings"
 )
 
-var splitConfPrefix string
-var splitConfIndividial bool
+var (
+	splitConfPrefix     string
+	splitConfIndividial bool
+)
 
 func splitCmdInitFlags(cmd *cobra.Command) {
 	cmd.Flags().StringVarP(&splitConfPrefix, "prefix", "p", "out", "File prefix for generated conf files")
@@ -93,6 +95,8 @@ func doSplitConf(confFile, outDir string) error {
 		return err
 	}
 
+	// Either split into multiple files, or split into one file with a yaml
+	// list.
 	if splitConfIndividial {
 		return doSplitMultFiles(conf, outDir)
 	} else {
@@ -117,7 +121,7 @@ func splitCmdPreRunE(cmd *cobra.Command, args []string) error {
 	}
 
 	if fi, err := os.Stat(args[1]); err != nil {
-		return fmt.Errorf("Error stating output directory: %v", err)
+		return fmt.Errorf("Stat error reading output directory: %v", err)
 	} else if !fi.IsDir() {
 		return errors.New("Output directory cannot be a file")
 	}
