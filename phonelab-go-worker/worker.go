@@ -12,6 +12,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/exec"
 	"path"
 	"sync"
 	"time"
@@ -19,7 +20,7 @@ import (
 
 var logger = log.New(os.Stderr, "phonelab-go-worker", log.LstdFlags)
 
-type PhoneLabWorker struct {
+type PhoneLabWorkerManager struct {
 	Server          string
 	Port            int
 	BeanstalkServer string
@@ -31,16 +32,40 @@ type PhoneLabWorker struct {
 	sync.Mutex
 }
 
-var worker *PhoneLabWorker
+// The global work manager
+var workerManager *PhoneLabWorkerManager
 
-func NewPhoneLabWorker() *PhoneLabWorker {
-	return &PhoneLabWorker{
+func NewPhoneLabWorkerManager() *PhoneLabWorkerManager {
+	return &PhoneLabWorkerManager{
 		Server:          workerConfServer,
 		Port:            workerConfPort,
 		BeanstalkServer: workerConfBeanstalkServer,
 		BeanstalkPort:   workerConfBeanstalkPort,
 		MaxJobs:         workerConfMaxJobs,
 	}
+}
+
+// An individual worker thread.
+type PhoneLabWorker struct {
+	Id int
+
+	server  string
+	conn    *beanstalk.Conn
+	tempDir string
+}
+
+func NewPhoneLabWorker(mgr *PhoneLabWorkerManager, id int) (*PhoneLabWorker, error) {
+	c, err := beanstalk.Dial("tcp", fmt.Sprintf("%v:%v", mgr.BeanstalkServer, mgr.BeanstalkPort))
+	if err != nil {
+		return nil, fmt.Errorf("Unable to connect to beanstalk: %v", err)
+	}
+
+	return &PhoneLabWorker{
+		Id:      id,
+		conn:    c,
+		server:  fmt.Sprintf("%v:%v", mgr.Server, mgr.Port),
+		tempDir: mgr.tempDir,
+	}, nil
 }
 
 type BeanstalkJob struct {
@@ -68,12 +93,12 @@ func workerCmdInitFlags(cmd *cobra.Command) {
 
 // Entry point for phonelab-go-server
 func workerCmdRun(cmd *cobra.Command, args []string) {
-	worker = NewPhoneLabWorker()
-	worker.Start()
+	workerManager = NewPhoneLabWorkerManager()
+	workerManager.Start()
 }
 
 // Kick off the worker
-func (w *PhoneLabWorker) Start() {
+func (w *PhoneLabWorkerManager) Start() {
 
 	if d, err := ioutil.TempDir("", "phonelab-go-worker"); err != nil {
 		panic(fmt.Sprintf("Cannot create temp dir: %v", err))
@@ -86,36 +111,40 @@ func (w *PhoneLabWorker) Start() {
 	w.mainLoop()
 }
 
-func (w *PhoneLabWorker) mainLoop() {
+func (mgr *PhoneLabWorkerManager) mainLoop() {
+	// TODO: Allow MaxJobs to change
 
-	sem := make(chan int, w.MaxJobs)
-	id := int64(0)
-
-	for {
-		sem <- 1
-		id += 1
-
-		// TODO: shut it down after N errors
-
-		// Get a job, run it
-		go func(wid int64) {
-			if err := w.runOneJob(wid); err != nil {
-				logger.Printf("Error running job: %v\n", err)
-			}
-			<-sem
-		}(id)
+	workers := make([]*PhoneLabWorker, 0, mgr.MaxJobs)
+	for i := 0; i < mgr.MaxJobs; i++ {
+		w, err := NewPhoneLabWorker(mgr, i+1)
+		if err != nil {
+			panic(err)
+		}
+		workers = append(workers, w)
 	}
+
+	done := make(chan int)
+
+	for _, w := range workers {
+		go func(worker *PhoneLabWorker) {
+			for {
+				if err := worker.runOneJob(); err != nil {
+					logger.Printf("Error running job: %v\n", err)
+				}
+			}
+		}(w)
+	}
+
+	// Block forever
+	<-done
 }
 
-func (w *PhoneLabWorker) runOneJob(id int64) error {
-	conn, err := beanstalk.Dial("tcp", fmt.Sprintf("%v:%v", w.BeanstalkServer, w.BeanstalkPort))
-	if err != nil {
-		panic(fmt.Sprintf("Unable to connect to beanstalk: %v", err))
-	}
-	defer conn.Close()
-
+func (w *PhoneLabWorker) runOneJob() error {
 	var bid uint64
 	var body []byte
+	var err error
+
+	id := w.Id
 
 	// We loop here because we don't know when a new tube will be added.
 	// We keep the timeout relatively short and poll for tube changes.
@@ -123,15 +152,16 @@ func (w *PhoneLabWorker) runOneJob(id int64) error {
 	// any tube.
 	for {
 		// Get all tubes
-		tubes, err := conn.ListTubes()
+		tubes, err := w.conn.ListTubes()
 		if err != nil {
 			logger.Fatalf("Error listing tubes: '%v'. Shutting down.\n", err)
+			return err
 		}
 
 		// Get a job from beanstalk from one of the tubes
 		logger.Printf("Worker %v retrieving job...\n", id)
 
-		ts := beanstalk.NewTubeSet(conn, tubes...)
+		ts := beanstalk.NewTubeSet(w.conn, tubes...)
 
 		bid, body, err = ts.Reserve(30 * time.Second)
 		if err != nil {
@@ -149,41 +179,54 @@ func (w *PhoneLabWorker) runOneJob(id int64) error {
 
 	// Download resources
 	logger.Printf("Worker %v downloading conf file...\n", id)
-	ep := fmt.Sprintf("%v:%v/conf/%v/%v", w.Server, w.Port, job.MetaId, job.Index)
+	ep := fmt.Sprintf("%v/conf/%v/%v", w.server, job.MetaId, job.Index)
 
 	confFile := path.Join(w.tempDir, fmt.Sprintf("conf_%v_%v.yaml", job.MetaId, job.Index))
 
 	if err = downloadFileBase(ep, confFile, 0644, false); err != nil {
 		return err
 	}
-	//defer os.Remove(confFile)
+	defer os.Remove(confFile)
 
 	logger.Printf("Worker %v downloading plugin file...\n", id)
 
-	ep = fmt.Sprintf("%v:%v/plugin/%v", w.Server, w.Port, job.MetaId)
+	ep = fmt.Sprintf("%v/plugin/%v", w.server, job.MetaId)
 	pluginFile := path.Join(w.tempDir, fmt.Sprintf("plugin_%v_%v.yaml", job.MetaId, job.Index))
 
 	if err = downloadFileBase(ep, pluginFile, 0744, true); err != nil {
 		return err
 	}
-	//defer os.Remove(pluginFile)
+	defer os.Remove(pluginFile)
 
 	// Execute it
-	// TODO: Actually run experiment
+	if err = w.execPhoneLabGo(confFile, pluginFile); err != nil {
+		logger.Printf("worker %v error running phonelab-go: %v\n", id, err)
+	}
 
 	logger.Printf("Worker %v attempting delete job %v...\n", id, bid)
 
 	// Done
-	conn.Delete(bid)
+	w.conn.Delete(bid)
 
 	logger.Printf("Worker %v attempting delete conf file on the server...\n", id)
 	// best effort delete job files on server
-	ep = fmt.Sprintf("%v:%v/conf/%v/%v", w.Server, w.Port, job.MetaId, job.Index)
+	ep = fmt.Sprintf("%v/conf/%v/%v", w.server, job.MetaId, job.Index)
 	gorequest.New().Delete(ep).End()
 
 	logger.Printf("Worker %v done!\n", id)
 
 	return nil
+}
+
+func (w *PhoneLabWorker) execPhoneLabGo(confFile, pluginFile string) error {
+	// TODO: What to do with the output?
+	// Ideally, we'd send this back to the server.
+
+	cmd := exec.Command("phonelab-go", "run", confFile, pluginFile)
+	output, err := cmd.CombinedOutput()
+
+	logger.Printf("Command Output:\n%v", string(output))
+	return err
 }
 
 // Download a single file from the server and unmarshal the JSON mody into obj.
@@ -216,5 +259,6 @@ func downloadFileBase(endpoint, dest string, mode os.FileMode, isBase64 bool) er
 }
 
 // Stop is called when we're being killed. Clean up and free any resources.
-func (w *PhoneLabWorker) Stop() {
+func (w *PhoneLabWorkerManager) Stop() {
+	os.RemoveAll(w.tempDir)
 }

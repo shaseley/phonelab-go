@@ -34,8 +34,8 @@ func waitForSignal() {
 	go func() {
 		for _ = range signalChan {
 			fmt.Println("Killing...")
-			if worker != nil {
-				worker.Stop()
+			if workerManager != nil {
+				workerManager.Stop()
 			}
 			doneChan <- true
 		}
