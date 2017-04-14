@@ -11,8 +11,8 @@ import (
 
 	"github.com/bmatcuk/doublestar"
 	"github.com/gurupras/go-hdfs-doublestar"
-	"github.com/gurupras/phonelab-go/hdfs"
 	"github.com/shaseley/depgraph"
+	"github.com/shaseley/phonelab-go/hdfs"
 	log "github.com/sirupsen/logrus"
 	yaml "gopkg.in/yaml.v2"
 )

@@ -11,7 +11,7 @@ import (
 	"github.com/bmatcuk/doublestar"
 	"github.com/gurupras/go-easyfiles"
 	"github.com/gurupras/go-hdfs-doublestar"
-	"github.com/gurupras/phonelab-go/hdfs"
+	"github.com/shaseley/phonelab-go/hdfs"
 	log "github.com/sirupsen/logrus"
 )
 
