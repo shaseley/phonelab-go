@@ -45,7 +45,6 @@ func waitForSignal() {
 }
 
 func main() {
-
 	mainCmd := initCommands()
 
 	go func() {

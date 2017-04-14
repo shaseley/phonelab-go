@@ -119,10 +119,12 @@ func (s *SubmissionServer) prepareJob(user, name string) (*metaJob, error) {
 		d := path.Join(s.JobDir, fmt.Sprintf("%v", id))
 
 		if _, err := os.Stat(d); err == nil {
+			logger.Println("Skipping directory", d)
 			continue
 		}
 
 		if err := os.Mkdir(d, 0775); err != nil {
+			logger.Printf("Error creating directory %v: %v\n", d, err)
 			return nil, err
 		}
 
@@ -159,10 +161,12 @@ func (s *SubmissionServer) QueueJob(job *metaJob) (int, error) {
 	}
 
 	// Split into sources
+	logger.Println("Spitting conf file...")
 	splitConfs, err := conf.ShallowSplit()
 	if err != nil {
 		return http.StatusBadRequest, err
 	}
+	logger.Printf("Conf file split into %v files\n", len(splitConfs))
 
 	// Persist output
 	count := 0
