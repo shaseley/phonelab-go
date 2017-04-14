@@ -3,12 +3,18 @@ package phonelab
 import (
 	"errors"
 	"fmt"
-	"github.com/bmatcuk/doublestar"
-	"github.com/shaseley/depgraph"
-	yaml "gopkg.in/yaml.v2"
 	"io/ioutil"
 	"os"
+	"path/filepath"
+	"sort"
 	"strings"
+
+	"github.com/bmatcuk/doublestar"
+	"github.com/gurupras/go-hdfs-doublestar"
+	"github.com/gurupras/phonelab-go/hdfs"
+	"github.com/shaseley/depgraph"
+	log "github.com/sirupsen/logrus"
+	yaml "gopkg.in/yaml.v2"
 )
 
 // Build a pipeline from a yaml file.
@@ -33,12 +39,14 @@ type RunnerConf struct {
 type PipelineSourceType string
 
 const (
-	PipelineSourceFile PipelineSourceType = "files"
+	PipelineSourceFile     PipelineSourceType = "files"
+	PipelineSourcePhonelab                    = "phonelab"
 )
 
 type PipelineSourceConf struct {
-	Type    PipelineSourceType `yaml:"type"`
-	Sources []string           `yaml:"sources"`
+	Type     PipelineSourceType `yaml:"type"`
+	HdfsAddr string             `yaml:"hdfsAddr"`
+	Sources  []string           `yaml:"sources"`
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -166,58 +174,90 @@ func ProcessorConfsFromFile(file string) ([]*ProcessorConf, error) {
 
 // Expand the conf into multiple confs, resolving globbing, etc.
 func (conf *PipelineSourceConf) Expand() ([]string, error) {
-	switch conf.Type {
-	default:
-		{
-			return nil, errors.New("Invalid type specification: " + string(conf.Type))
-		}
-	case PipelineSourceFile:
-		{
-			allFiles := make([]string, 0)
-
-			for _, source := range conf.Sources {
-				if len(source) == 0 {
-					return nil, errors.New("Invalid source file: empty name")
-				}
-				if files, err := doublestar.Glob(source); err != nil {
-					return nil, fmt.Errorf("Error globbing files: %v", err)
-				} else {
-					allFiles = append(allFiles, files...)
-				}
-			}
-
-			return allFiles, nil
-		}
-	}
-}
-
-// Convert the source specification into something that can generate loglines.
-func (conf *PipelineSourceConf) ToPipelineSourceGenerator() (PipelineSourceGenerator, error) {
-
-	expanded, err := conf.Expand()
-
-	if err != nil {
-		return nil, err
-	}
+	allFiles := make([]string, 0)
 
 	switch conf.Type {
 	default:
 		return nil, errors.New("Invalid type specification: " + string(conf.Type))
 	case PipelineSourceFile:
-		if len(conf.Sources) == 0 {
-			return nil, errors.New("Missing sources specification in runner conf.")
-		}
+		fallthrough
+	case PipelineSourcePhonelab:
+		for _, source := range conf.Sources {
+			if len(source) == 0 {
+				return nil, fmt.Errorf("Invalid source file: empty name")
+			}
+			client, err := hdfs.NewHdfsClient(conf.HdfsAddr)
+			if err != nil {
+				return nil, fmt.Errorf("Failed to connect to HDFS name node: %v", err)
+			}
+			if client != nil {
+				log.Infof("Connected to hdfs at address: %v", conf.HdfsAddr)
+			}
 
-		if len(expanded) == 0 {
-			return nil, errors.New("No files resolved from sources")
+			var files []string
+			if client != nil {
+				// We're in HDFS mode
+				files, err = hdfs_doublestar.Glob(client, source)
+				log.Infof("HDFS glob result: %v", files)
+			} else {
+				files, err = doublestar.Glob(source)
+			}
+			if err != nil {
+				return nil, fmt.Errorf("Error globbing files: %v", err)
+			} else {
+				allFiles = append(allFiles, files...)
+			}
 		}
+	}
+	sort.Strings(allFiles)
+	return allFiles, nil
+}
 
+// Convert the source specification into something that can generate loglines.
+func (conf *PipelineSourceConf) ToPipelineSourceGenerator() (PipelineSourceGenerator, error) {
+	if len(conf.Sources) == 0 {
+		return nil, errors.New("Missing sources specification in runner conf.")
+	}
+
+	errHandler := func(err error) {
+		panic(err)
+	}
+	expanded, err := conf.Expand()
+	if err != nil {
+		return nil, err
+	}
+	if len(expanded) == 0 {
+		return nil, errors.New("No files resolved from sources")
+	}
+
+	switch conf.Type {
+	case PipelineSourceFile:
+		return NewTextFileSourceGenerator(expanded, errHandler), nil
+	case PipelineSourcePhonelab:
+		// FIXME: Currently, we're assuming that each 'source' is
+		// finding an info.json. Given this assumption, the device is
+		// the parent directory to each info.json.
+		devicePaths := make(map[string][]string)
+		for _, file := range expanded {
+			parent, err := filepath.Abs(filepath.Dir(file))
+			if err != nil {
+				return nil, fmt.Errorf("Failed to find absolute path: %v", err)
+			}
+			device := filepath.Base(parent)
+			basePath := filepath.Dir(parent)
+			if _, ok := devicePaths[device]; !ok {
+				devicePaths[device] = make([]string, 0)
+			}
+			devicePaths[device] = append(devicePaths[device], basePath)
+		}
+		return NewPhonelabSourceGenerator(devicePaths, conf.HdfsAddr, errHandler), nil
 		errHandler := func(err error) {
 			panic(err)
 		}
 
 		return NewTextFileSourceGenerator(expanded, errHandler), nil
 	}
+	return nil, errors.New("Invalid type specification: " + string(conf.Type))
 }
 
 func (conf *ProcessorConf) GeneratorName() string {
@@ -502,6 +542,7 @@ func (conf *RunnerConf) ToRunner(env *Environment) (*Runner, error) {
 	}
 
 	// Sources
+	log.Debugf("SourceConf: %v", conf.SourceConf)
 	gen, err := conf.SourceConf.ToPipelineSourceGenerator()
 	if err != nil {
 		return nil, err

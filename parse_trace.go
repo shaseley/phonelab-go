@@ -12,7 +12,7 @@ import (
 
 // Everything that the KernelTraceParser parses implements this interface
 type TraceInterface interface {
-	Tag() string
+	TraceTag() string
 }
 
 var TRACE_PATTERN = regexp.MustCompile(`` +
@@ -34,6 +34,10 @@ type Trace struct {
 	Tag       string  `logcat:"tag"`
 	//Datetime  time.Time `logcat:"-"`
 	//Logline   *Logline  `logcat:"-"`
+}
+
+func (t *Trace) TraceTag() string {
+	return t.Tag
 }
 
 type KernelTraceParser struct {
@@ -144,10 +148,6 @@ type SchedCpuHotplug struct {
 	Error int    `logcat:"error"`
 }
 
-func (t *SchedCpuHotplug) Tag() string {
-	return t.Trace.Tag
-}
-
 type SchedCPUHotplugParser struct {
 }
 
@@ -171,10 +171,6 @@ type ThermalTemp struct {
 	Trace    `logcat:"-"`
 	SensorId int `logcat:"sensor_id"`
 	Temp     int `logcat:"temp"`
-}
-
-func (t *ThermalTemp) Tag() string {
-	return t.Trace.Tag
 }
 
 type ThermalTempParser struct {
@@ -202,10 +198,6 @@ type CpuFrequency struct {
 	CpuId int `logcat:"cpu_id"`
 }
 
-func (cf *CpuFrequency) Tag() string {
-	return cf.Trace.Tag
-}
-
 type CpuFrequencyParser struct {
 }
 
@@ -227,10 +219,6 @@ var PHONELAB_NUM_ONLINE_CPUS_PATTERN = regexp.MustCompile(`` +
 type PhonelabNumOnlineCpus struct {
 	Trace         `logcat:"-"`
 	NumOnlineCpus int `logcat:"num_online_cpus"`
-}
-
-func (ti *PhonelabNumOnlineCpus) Tag() string {
-	return ti.Trace.Tag
 }
 
 type NumOnlineCpusParser struct {
@@ -256,10 +244,6 @@ type PhonelabProcForeground struct {
 	Pid   int    `logcat:"pid"`
 	Tgid  int    `logcat:"tgid"`
 	Comm  string `logcat:"comm"`
-}
-
-func (ti *PhonelabProcForeground) Tag() string {
-	return ti.Trace.Tag
 }
 
 type ProcForegroundParser struct {
@@ -321,10 +305,6 @@ type PhonelabPeriodicCtxSwitchInfo struct {
 	Tx      int64  `logcat:"tx"`
 }
 
-func (ti *PhonelabPeriodicCtxSwitchInfo) Tag() string {
-	return ti.Trace.Tag
-}
-
 type PeriodicCtxSwitchInfoParser struct {
 }
 
@@ -358,10 +338,6 @@ type PhonelabPeriodicCtxSwitchMarker struct {
 	Cpu    int        `logcat:"cpu"`
 	Count  int        `logcat:"count"`
 	LogIdx int64      `logcat:"log_idx"`
-}
-
-func (ti *PhonelabPeriodicCtxSwitchMarker) Tag() string {
-	return ti.Trace.Tag
 }
 
 type PeriodicCtxSwitchMarkerParser struct {
