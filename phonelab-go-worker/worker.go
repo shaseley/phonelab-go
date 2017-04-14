@@ -157,13 +157,17 @@ func (w *PhoneLabWorker) runOneJob(id int64) error {
 	//defer os.Remove(pluginFile)
 
 	// Execute it
+	// TODO: Actually run experiment
 
-	fmt.Printf("Worker %v attempting delete job %v...\n", id, bid)
+	logger.Printf("Worker %v attempting delete job %v...\n", id, bid)
 
 	// Done
 	conn.Delete(bid)
 
-	// TODO: Actually run experiment
+	logger.Printf("Worker %v attempting delete conf file on the server...\n", id)
+	// best effort delete job files on server
+	ep = fmt.Sprintf("%v:%v/conf/%v/%v", w.Server, w.Port, job.MetaId, job.Index)
+	gorequest.New().Delete(ep).End()
 
 	logger.Printf("Worker %v done!\n", id)
 

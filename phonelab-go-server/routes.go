@@ -23,6 +23,12 @@ var routes = []Route{
 		routeConf,
 	},
 	Route{
+		"deleteconf",
+		"DELETE",
+		"/conf/{meta_id}/{bean_id}",
+		routeDeleteConf,
+	},
+	Route{
 		"plugin",
 		"GET",
 		"/plugin/{meta_id}",

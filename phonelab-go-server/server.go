@@ -304,6 +304,38 @@ func routeConf(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "%v", string(bytes))
 }
 
+// DELETE /conf{id}/{index}
+func routeDeleteConf(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+
+	id := vars["meta_id"]
+	index := vars["bean_id"]
+
+	root := path.Join(server.JobDir, id)
+	dest := path.Join(root, fmt.Sprintf("conf_%v.yaml", index))
+
+	if _, err := os.Stat(dest); err != nil {
+		sendErrorCode(w, http.StatusNotFound, err)
+		return
+	}
+
+	os.Remove(dest)
+
+	// If the directory is empty, except for the conf and plugin, we can remove
+	// it.
+	files, err := ioutil.ReadDir(root)
+	if err == nil {
+		// (ReadDir sorts files by name)
+		if len(files) == 2 && files[0].Name() == ConfFileName && files[1].Name() == PluginFileName {
+			os.RemoveAll(root)
+		}
+	} else {
+		logger.Println("Error reading job dir:", err)
+	}
+
+	w.WriteHeader(http.StatusOK)
+}
+
 // GET /plugin/{id}
 func routePlugin(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
@@ -331,7 +363,6 @@ func routePlugin(w http.ResponseWriter, r *http.Request) {
 
 // Download an individual file
 func downloadFile(key, outFileName string, r *http.Request) (int, error) {
-
 	if file, _, err := r.FormFile(key); err != nil {
 		return http.StatusBadRequest, err
 	} else {
