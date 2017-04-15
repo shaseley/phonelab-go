@@ -260,11 +260,12 @@ func (c *countingProcessorGen) GenerateProcessor(source *PipelineSourceInstance,
 		filename = source.Info["file_name"].(string)
 	} else {
 		// No filename. Try to get bootid
-		if _, ok := source.Info["deviceid"]; !ok {
+		if _, ok := source.Info["source_info"]; !ok {
 			fmt.Fprintln(os.Stderr, "Did not find file_name or deviceid")
 			return nil
 		}
-		filename = fmt.Sprintf("%v->%v", source.Info["deviceid"].(string), source.Info["bootid"].(string))
+		sourceInfo := source.Info["source_info"].(*PhonelabSourceInfo)
+		filename = fmt.Sprintf("%v->%v", sourceInfo.DeviceId, sourceInfo.BootId)
 	}
 	return NewSimpleProcessor(source.Processor, &countingHandler{
 		count:     0,
