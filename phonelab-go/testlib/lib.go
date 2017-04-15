@@ -34,3 +34,7 @@ func (tg *testGen) GenerateProcessor(source *phonelab.PipelineSourceInstance,
 func InitEnv(env *phonelab.Environment) {
 	env.Processors["test"] = &testGen{}
 }
+
+func main() {
+
+}
