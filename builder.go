@@ -44,9 +44,9 @@ const (
 )
 
 type PipelineSourceConf struct {
-	Type     PipelineSourceType `yaml:"type"`
-	HdfsAddr string             `yaml:"hdfsAddr"`
-	Sources  []string           `yaml:"sources"`
+	Type    PipelineSourceType     `yaml:"type"`
+	Args    map[string]interface{} `yaml:"args"`
+	Sources []string               `yaml:"sources"`
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -176,6 +176,11 @@ func ProcessorConfsFromFile(file string) ([]*ProcessorConf, error) {
 func (conf *PipelineSourceConf) Expand() ([]string, error) {
 	allFiles := make([]string, 0)
 
+	var hdfsAddr string
+	if v, ok := conf.Args["hdfs_addr"]; ok {
+		hdfsAddr = v.(string)
+	}
+
 	switch conf.Type {
 	default:
 		return nil, errors.New("Invalid type specification: " + string(conf.Type))
@@ -186,12 +191,12 @@ func (conf *PipelineSourceConf) Expand() ([]string, error) {
 			if len(source) == 0 {
 				return nil, fmt.Errorf("Invalid source file: empty name")
 			}
-			client, err := hdfs.NewHdfsClient(conf.HdfsAddr)
+			client, err := hdfs.NewHdfsClient(hdfsAddr)
 			if err != nil {
 				return nil, fmt.Errorf("Failed to connect to HDFS name node: %v", err)
 			}
 			if client != nil {
-				log.Infof("Connected to hdfs at address: %v", conf.HdfsAddr)
+				log.Infof("Connected to hdfs at address: %v", hdfsAddr)
 			}
 
 			var files []string
@@ -230,6 +235,8 @@ func (conf *PipelineSourceConf) ToPipelineSourceGenerator() (PipelineSourceGener
 		return nil, errors.New("No files resolved from sources")
 	}
 
+	log.Infof("conf.Args=%v", conf.Args)
+
 	switch conf.Type {
 	case PipelineSourceFile:
 		return NewTextFileSourceGenerator(expanded, errHandler), nil
@@ -250,7 +257,7 @@ func (conf *PipelineSourceConf) ToPipelineSourceGenerator() (PipelineSourceGener
 			}
 			devicePaths[device] = append(devicePaths[device], basePath)
 		}
-		return NewPhonelabSourceGenerator(devicePaths, conf.HdfsAddr, errHandler), nil
+		return NewPhonelabSourceGenerator(devicePaths, conf.Args, errHandler), nil
 		errHandler := func(err error) {
 			panic(err)
 		}
@@ -510,9 +517,9 @@ func (conf *RunnerConf) ShallowSplit() ([]*RunnerConf, error) {
 
 	for _, src := range expanded {
 		newSource := &PipelineSourceConf{
-			Type:     origSource.Type,
-			HdfsAddr: origSource.HdfsAddr,
-			Sources:  []string{src},
+			Type:    origSource.Type,
+			Args:    origSource.Args,
+			Sources: []string{src},
 		}
 		// Can't do this in C!
 		newConf := *conf
