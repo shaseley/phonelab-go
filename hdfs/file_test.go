@@ -24,7 +24,7 @@ func TestStat(t *testing.T) {
 	t.Parallel()
 	require := require.New(t)
 
-	client, err := NewHdfsClient("dirtydeeds.cse.buffalo.edu:9000")
+	client, err := NewHDFSClient("dirtydeeds.cse.buffalo.edu:9000")
 	require.Nil(err)
 	require.NotNil(client)
 
@@ -49,7 +49,7 @@ func TestOpenBadPath(t *testing.T) {
 	t.Parallel()
 	require := require.New(t)
 
-	client, err := NewHdfsClient("dirtydeeds.cse.buffalo.edu:9000")
+	client, err := NewHDFSClient("dirtydeeds.cse.buffalo.edu:9000")
 	require.Nil(err)
 	require.NotNil(client)
 
@@ -63,7 +63,7 @@ func TestOpenGzUnknown(t *testing.T) {
 	t.Parallel()
 	require := require.New(t)
 
-	client, err := NewHdfsClient("dirtydeeds.cse.buffalo.edu:9000")
+	client, err := NewHDFSClient("dirtydeeds.cse.buffalo.edu:9000")
 	require.Nil(err)
 	require.NotNil(client)
 
@@ -78,7 +78,7 @@ func TestOpenCreate(t *testing.T) {
 	t.Parallel()
 	require := require.New(t)
 
-	client, err := NewHdfsClient("dirtydeeds.cse.buffalo.edu:9000")
+	client, err := NewHDFSClient("dirtydeeds.cse.buffalo.edu:9000")
 	require.Nil(err)
 	require.NotNil(client)
 
@@ -95,7 +95,7 @@ func TestOpenModes(t *testing.T) {
 	t.Parallel()
 	require := require.New(t)
 
-	client, err := NewHdfsClient("dirtydeeds.cse.buffalo.edu:9000")
+	client, err := NewHDFSClient("dirtydeeds.cse.buffalo.edu:9000")
 	require.Nil(err)
 	require.NotNil(client)
 
@@ -132,7 +132,7 @@ func TestReadWrite(t *testing.T) {
 	t.Parallel()
 	require := require.New(t)
 
-	client, err := NewHdfsClient("dirtydeeds.cse.buffalo.edu:9000")
+	client, err := NewHDFSClient("dirtydeeds.cse.buffalo.edu:9000")
 	require.Nil(err)
 	require.NotNil(client)
 
@@ -157,7 +157,7 @@ func TestReadWriteGz(t *testing.T) {
 	t.Parallel()
 	require := require.New(t)
 
-	client, err := NewHdfsClient("dirtydeeds.cse.buffalo.edu:9000")
+	client, err := NewHDFSClient("dirtydeeds.cse.buffalo.edu:9000")
 	require.Nil(err)
 	require.NotNil(client)
 

@@ -191,7 +191,7 @@ func (conf *PipelineSourceConf) Expand() ([]string, error) {
 			if len(source) == 0 {
 				return nil, fmt.Errorf("Invalid source file: empty name")
 			}
-			client, err := hdfs.NewHdfsClient(hdfsAddr)
+			client, err := hdfs.NewHDFSClient(hdfsAddr)
 			if err != nil {
 				return nil, fmt.Errorf("Failed to connect to HDFS name node: %v", err)
 			}
@@ -202,7 +202,7 @@ func (conf *PipelineSourceConf) Expand() ([]string, error) {
 			var files []string
 			if client != nil {
 				// We're in HDFS mode
-				files, err = hdfs_doublestar.Glob(client, source)
+				files, err = hdfs_doublestar.Glob(client.Client, source)
 				log.Infof("HDFS glob result: %v", files)
 			} else {
 				files, err = doublestar.Glob(source)
