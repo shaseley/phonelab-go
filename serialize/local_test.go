@@ -39,3 +39,13 @@ func TestLocalSerialize(t *testing.T) {
 
 	require.True(reflect.DeepEqual(data, got))
 }
+
+func TestLocalSerializeBadArgs(t *testing.T) {
+	require := require.New(t)
+
+	serializer := &LocalSerializer{}
+
+	args := struct{}{}
+	err := serializer.Serialize(nil, args)
+	require.NotNil(err)
+}

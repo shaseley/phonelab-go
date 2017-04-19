@@ -61,3 +61,13 @@ func TestHTTPSerialize(t *testing.T) {
 
 	require.True(reflect.DeepEqual(data, got))
 }
+
+func TestHTTPSerializerBadArgs(t *testing.T) {
+	require := require.New(t)
+
+	serializer := &HTTPSerializer{}
+
+	args := struct{}{}
+	err := serializer.Serialize(nil, args)
+	require.NotNil(err)
+}
