@@ -11,10 +11,14 @@ import (
 )
 
 type HDFSSerializer struct {
+	Addr string
+}
+
+func NewHDFSSerializer(addr string) *HDFSSerializer {
+	return &HDFSSerializer{addr}
 }
 
 type HDFSSerializerArgs struct {
-	*hdfs.HDFSClient
 	Filename string
 	FileType
 }
@@ -27,16 +31,24 @@ func (h *HDFSSerializer) Serialize(obj interface{}, args interface{}) error {
 		return fmt.Errorf("Invalid args type.\nExpecting: %t\nGot: %t\n", HDFSSerializerArgs{}, args)
 	}
 
+	// FIXME: We should use a pool of connections
+	// This will blow up the number of connections if there are a large
+	// number of goroutines.
+	client, err := hdfs.NewHDFSClient(h.Addr)
+	if err != nil {
+		return fmt.Errorf("Failed to initialize HDFS client: %v", err)
+	}
+
 	//Mkdirs
 	outdir := path.Dir(hdfsArgs.Filename)
-	err = hdfsArgs.MkdirAll(outdir, 0775)
+	err = client.MkdirAll(outdir, 0775)
 	if err != nil {
 		return fmt.Errorf("Failed to create directory: %v: %v", outdir, err)
 	}
 
 	filePath := hdfsArgs.Filename
 
-	file, err := hdfs.OpenFile(filePath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, easyfiles.FileType(hdfsArgs.FileType), hdfsArgs.HDFSClient)
+	file, err := hdfs.OpenFile(filePath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, easyfiles.FileType(hdfsArgs.FileType), client)
 	if err != nil {
 		return fmt.Errorf("Failed to open file: %v: %v", filePath, err)
 	}

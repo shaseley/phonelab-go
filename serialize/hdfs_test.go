@@ -15,11 +15,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type hdfsTestConf struct {
-	Addr string `yaml:"addr"`
-	Path string `yaml:"path"`
-}
-
 var (
 	hdfsAddr = flag.String("hdfs-addr", "", "Address of HDFS server")
 	hdfsPath = flag.String("hdfs-path", "/test", "Base path under which serialization is tested")
@@ -32,20 +27,18 @@ func TestHDFSSerialize(t *testing.T) {
 
 	require := require.New(t)
 
-	conf := hdfsTestConf{*hdfsAddr, *hdfsPath}
-
-	client, err := hdfs.NewHDFSClient(conf.Addr)
+	client, err := hdfs.NewHDFSClient(*hdfsAddr)
 	require.Nil(err)
 	require.NotNil(client)
 
 	// Add an extra directory just to test mkdirAll
-	outdir := filepath.Join(conf.Path, "test-hdfs-serialize")
+	outdir := filepath.Join(*hdfsPath, "test-hdfs-serialize")
 	filePath := filepath.Join(outdir, "test-serialize.gz")
-	hdfsArgs := &HDFSSerializerArgs{client, filePath, GZ_TRUE}
+	hdfsArgs := &HDFSSerializerArgs{filePath, GZ_TRUE}
 
 	data := []string{"Hello", "World"}
 
-	serializer := &HDFSSerializer{}
+	serializer := &HDFSSerializer{*hdfsAddr}
 	err = serializer.Serialize(data, hdfsArgs)
 	require.Nil(err)
 	defer client.Remove(outdir)
@@ -63,9 +56,13 @@ func TestHDFSSerialize(t *testing.T) {
 }
 
 func TestHDFSSerializerBadArgs(t *testing.T) {
+	if strings.Compare(*hdfsAddr, "") == 0 {
+		t.Skip(fmt.Sprintf("HDFS address not specified"))
+	}
+
 	require := require.New(t)
 
-	serializer := &HDFSSerializer{}
+	serializer := &HDFSSerializer{*hdfsAddr}
 
 	args := struct{}{}
 	err := serializer.Serialize(nil, args)
