@@ -9,7 +9,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gurupras/gocommons"
 	"github.com/pbnjay/strptime"
 )
 
@@ -160,19 +159,6 @@ func ParseLogline(line string) (*Logline, error) {
 	}
 }
 
-// TODO: Should this move?
-func ParseLoglineConvert(line string) gocommons.SortInterface {
-	if ll, _ := ParseLogline(line); ll != nil {
-		return ll
-	} else {
-		return nil
-	}
-}
-
-var (
-	LoglineSortParams = gocommons.SortParams{LineConvert: ParseLoglineConvert, Lines: make(gocommons.SortCollection, 0)}
-)
-
 func (l *Logline) String() string {
 	return l.Line
 	//	return fmt.Sprintf("%v %v %v [%v] %v %v %v %v: %v",
@@ -180,7 +166,7 @@ func (l *Logline) String() string {
 	//		l.pid, l.tid, l.level, l.tag, l.payload)
 }
 
-func (l *Logline) Less(s gocommons.SortInterface) (ret bool, err error) {
+func (l *Logline) Less(s interface{}) (ret bool, err error) {
 	var o *Logline
 	var ok bool
 	if s != nil {
