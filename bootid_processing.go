@@ -46,13 +46,13 @@ func NewPhonelabSourceProcessor(sourceInfo *PhonelabSourceInfo, errHandler ErrHa
 
 	bootPath := filepath.Join(path, device, bootId)
 
-	client, err := hdfs.NewHdfsClient(hdfsAddr)
+	client, err := hdfs.NewHDFSClient(hdfsAddr)
 	if err != nil {
 		return nil, err
 	}
 	var bootFiles []string
 	if client != nil {
-		bootFiles, err = hdfs_doublestar.Glob(client, filepath.Join(bootPath, "*.gz"))
+		bootFiles, err = hdfs_doublestar.Glob(client.Client, filepath.Join(bootPath, "*.gz"))
 	} else {
 		bootFiles, err = doublestar.Glob(filepath.Join(bootPath, "*.gz"))
 	}
@@ -66,7 +66,7 @@ func NewPhonelabSourceProcessor(sourceInfo *PhonelabSourceInfo, errHandler ErrHa
 func (psp *PhonelabSourceProcessor) Process() <-chan interface{} {
 	outChan := make(chan interface{})
 
-	client, err := hdfs.NewHdfsClient(psp.HdfsAddr)
+	client, err := hdfs.NewHDFSClient(psp.HdfsAddr)
 	if err != nil {
 		panic(fmt.Sprintf("Unable to connect to HDFS namenode at '%v': %v", psp.HdfsAddr, err))
 	}
@@ -154,7 +154,7 @@ func (psg *PhonelabSourceGenerator) Process() <-chan *PipelineSourceInstance {
 		}
 	}
 
-	client, err := hdfs.NewHdfsClient(hdfsAddr)
+	client, err := hdfs.NewHDFSClient(hdfsAddr)
 	if err != nil {
 		panic(fmt.Sprintf("Unable to connect to HDFS namenode at '%v': %v", hdfsAddr, err))
 	}

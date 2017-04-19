@@ -4,22 +4,13 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
-	"strings"
 
-	"github.com/colinmarc/hdfs"
 	"github.com/gurupras/go-easyfiles"
 	"github.com/gurupras/go-easyfiles/easyhdfs"
 	log "github.com/sirupsen/logrus"
 )
 
-func NewHdfsClient(hdfsAddr string) (*hdfs.Client, error) {
-	if strings.Compare(hdfsAddr, "") == 0 {
-		return nil, nil
-	}
-	return hdfs.New(hdfsAddr)
-}
-
-func OpenFile(path string, mode int, gz easyfiles.FileType, client *hdfs.Client) (*easyfiles.File, error) {
+func OpenFile(path string, mode int, gz easyfiles.FileType, client *HDFSClient) (*easyfiles.File, error) {
 	if client == nil {
 		return easyfiles.Open(path, mode, gz)
 	} else {
@@ -28,7 +19,7 @@ func OpenFile(path string, mode int, gz easyfiles.FileType, client *hdfs.Client)
 		if gz == easyfiles.GZ_UNKNOWN {
 			return nil, fmt.Errorf("easyhdfs cannot handle GZ_UNKNOWN. Must be GZ_TRUE or GZ_FALSE.")
 		}
-		hdfsFile := &easyhdfs.HdfsFile{path, nil, nil, client}
+		hdfsFile := &easyhdfs.HdfsFile{path, nil, nil, client.Client}
 		// Check if file exists
 		// If a file does not exist, this throws an error
 		stat, err := client.Stat(path)
@@ -89,7 +80,7 @@ func OpenFile(path string, mode int, gz easyfiles.FileType, client *hdfs.Client)
 	}
 }
 
-func ReadFile(path string, client *hdfs.Client) ([]byte, error) {
+func ReadFile(path string, client *HDFSClient) ([]byte, error) {
 	if client != nil {
 		return client.ReadFile(path)
 	} else {
