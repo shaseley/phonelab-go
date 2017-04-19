@@ -49,7 +49,7 @@ func (t *totalDataCollector) BuildPipeline(source *PipelineSourceInstance) (*Pip
 	}, nil
 }
 
-func (t *totalDataCollector) OnData(data interface{}) {
+func (t *totalDataCollector) OnData(data interface{}, unused PipelineSourceInfo) {
 	t.Lock()
 	t.results = append(t.results, data.(int))
 	t.Unlock()

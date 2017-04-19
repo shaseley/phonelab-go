@@ -46,7 +46,7 @@ type PipelineBuilder interface {
 // local logcat file, gzipped log files, boot_id processor, or streamed over a
 // network.
 type DataCollector interface {
-	OnData(interface{})
+	OnData(interface{}, PipelineSourceInfo)
 	Finish()
 }
 
@@ -82,7 +82,7 @@ func (r *Runner) runOne(source *PipelineSourceInstance, done chan error) {
 
 	// Drain the results and forward them to the DataCollector.
 	for res := range resChan {
-		r.Collector.OnData(res)
+		r.Collector.OnData(res, source.Info)
 	}
 
 	done <- nil

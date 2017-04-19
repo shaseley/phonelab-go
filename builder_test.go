@@ -36,7 +36,11 @@ func TestRunnerConfFromString(t *testing.T) {
 
 	confString := `
 max_concurrency: 5
-data_collector: "resultsCollector"
+data_collector:
+  name: "resultsCollector"
+  args:
+    foo: 100
+    bar: "parameter"
 source:
   type: files
   sources:
@@ -64,7 +68,13 @@ sink:
 
 	expected := &RunnerConf{
 		MaxConcurrency: 5,
-		DataCollector:  "resultsCollector",
+		DataCollector: &DataCollectorConf{
+			Name: "resultsCollector",
+			Args: map[string]interface{}{
+				"foo": 100,
+				"bar": "parameter",
+			},
+		},
 		SourceConf: &PipelineSourceConf{
 			Type: PipelineSourceFile,
 			Sources: []string{
@@ -556,7 +566,7 @@ type testDataCollector struct {
 	sync.Mutex
 }
 
-func (dc *testDataCollector) OnData(data interface{}) {
+func (dc *testDataCollector) OnData(data interface{}, unused PipelineSourceInfo) {
 	dc.Lock()
 	dc.totalLines += 1
 	dc.Unlock()
@@ -578,7 +588,7 @@ func TestBuilderDataCollector(t *testing.T) {
 	env := NewEnvironment()
 	env.Processors["passthrough"] = &passThroughProcessorGen{}
 
-	collectorGen := func() DataCollector {
+	collectorGen := func(map[string]interface{}) DataCollector {
 		return &testDataCollector{
 			totalLines: 0,
 			expected:   15000,
@@ -588,7 +598,7 @@ func TestBuilderDataCollector(t *testing.T) {
 	env.DataCollectors["test"] = collectorGen
 
 	confString := `
-data_collector: "test"
+data_collector: {name: "test"}
 source:
   type: files
   sources: ["./test/*.log"]
@@ -603,7 +613,8 @@ sink:
 	require.Nil(err)
 	require.NotNil(conf)
 
-	assert.Equal("test", conf.DataCollector)
+	require.NotNil(conf.DataCollector)
+	assert.Equal("test", conf.DataCollector.Name)
 
 	runner, err := conf.ToRunner(env)
 	require.Nil(err)
@@ -805,7 +816,7 @@ type lcDataCollector struct {
 	sync.Mutex
 }
 
-func (dc *lcDataCollector) OnData(data interface{}) {
+func (dc *lcDataCollector) OnData(data interface{}, unused PipelineSourceInfo) {
 	dc.Lock()
 	dc.Counts[data.(*lineCount)] += 1
 	dc.Unlock()
@@ -827,7 +838,7 @@ func TestBuilderInputMuxing(t *testing.T) {
 	env.Processors["passthrough"] = &passThroughProcessorGen{}
 	env.Processors["lineCounter"] = &lineCountProcessorGen{}
 
-	collectorGen := func() DataCollector {
+	collectorGen := func(map[string]interface{}) DataCollector {
 		return &lcDataCollector{
 			Counts:   make(map[*lineCount]int),
 			expected: 15000,
@@ -837,7 +848,7 @@ func TestBuilderInputMuxing(t *testing.T) {
 	env.DataCollectors["test"] = collectorGen
 
 	confString := `
-data_collector: "test"
+data_collector: {name: "test"}
 source:
   type: files
   sources: ["./test/*.log"]
@@ -877,7 +888,8 @@ sink:
 	require.Nil(err)
 	require.NotNil(conf)
 
-	assert.Equal("test", conf.DataCollector)
+	require.NotNil(conf.DataCollector)
+	assert.Equal("test", conf.DataCollector.Name)
 
 	runner, err := conf.ToRunner(env)
 	require.Nil(err)

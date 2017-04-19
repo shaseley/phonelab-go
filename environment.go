@@ -7,7 +7,7 @@ type ProcessorGen interface {
 	GenerateProcessor(info *PipelineSourceInstance, kwargs map[string]interface{}) Processor
 }
 
-type DataCollectorGen func() DataCollector
+type DataCollectorGen func(kwargs map[string]interface{}) DataCollector
 
 type Environment struct {
 	// Parsers we know about

@@ -27,7 +27,7 @@ import (
 
 type RunnerConf struct {
 	MaxConcurrency uint                `yaml:"max_concurrency"` // Number of concurrent pipelines
-	DataCollector  string              `yaml:"data_collector"`  // DataCollector to hook up to the sink
+	DataCollector  *DataCollectorConf  `yaml:"data_collector"`  // DataCollector to hook up to the sink
 	SourceConf     *PipelineSourceConf `yaml:"source"`          // Source specification
 	Processors     []*ProcessorConf    `yaml:"processors"`      // Custom processors that are defined here (as opposed to in a separate file).
 	Sink           *ProcessorInputConf `yaml:"sink"`            // The sink/last-hop processor/args.
@@ -47,6 +47,17 @@ type PipelineSourceConf struct {
 	Type    PipelineSourceType     `yaml:"type"`
 	Args    map[string]interface{} `yaml:"args"`
 	Sources []string               `yaml:"sources"`
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Collector Conf
+
+// If the DataCollectorConf Name field is set to 'default', set to
+const DataCollectorDefaultName = "default"
+
+type DataCollectorConf struct {
+	Name string                 `yaml:"name"`
+	Args map[string]interface{} `yaml:"args"`
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -562,11 +573,17 @@ func (conf *RunnerConf) ToRunner(env *Environment) (*Runner, error) {
 	// use our /dev/null version.
 	var collector DataCollector = proc
 
-	if len(conf.DataCollector) > 0 {
-		if cgen, ok := env.DataCollectors[conf.DataCollector]; ok {
-			collector = cgen()
+	if conf.DataCollector != nil && len(conf.DataCollector.Name) > 0 {
+		if conf.DataCollector.Name == DataCollectorDefaultName {
+			// We know how to build these
+			collector, err = NewDefaultCollector(conf.DataCollector.Args)
+			if err != nil {
+				return nil, err
+			}
+		} else if cgen, ok := env.DataCollectors[conf.DataCollector.Name]; ok {
+			collector = cgen(conf.DataCollector.Args)
 		} else {
-			return nil, errors.New("Unknown DataCollector: " + conf.DataCollector)
+			return nil, errors.New("Unknown DataCollector: " + conf.DataCollector.Name)
 		}
 	}
 
@@ -745,5 +762,5 @@ func (proc *RunnerConfProcessor) BuildPipeline(sourceInst *PipelineSourceInstanc
 	}, nil
 }
 
-func (proc *RunnerConfProcessor) OnData(data interface{}) {}
-func (proc *RunnerConfProcessor) Finish()                 {}
+func (proc *RunnerConfProcessor) OnData(data interface{}, unused PipelineSourceInfo) {}
+func (proc *RunnerConfProcessor) Finish()                                            {}
