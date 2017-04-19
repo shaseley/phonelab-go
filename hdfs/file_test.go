@@ -1,13 +1,18 @@
 package hdfs
 
 import (
+	"flag"
+	"fmt"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/gurupras/go-easyfiles"
 	log "github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/require"
 )
+
+var hdfsAddr = flag.String("hdfs-addr", "", "Address of HDFS server")
 
 func testReadData(f *easyfiles.File, require *require.Assertions) {
 	reader, err := f.RawReader()
@@ -22,9 +27,14 @@ func testReadData(f *easyfiles.File, require *require.Assertions) {
 
 func TestStat(t *testing.T) {
 	t.Parallel()
+
+	if strings.Compare(*hdfsAddr, "") == 0 {
+		t.Skip(fmt.Sprintf("No HDFS address specified"))
+	}
+
 	require := require.New(t)
 
-	client, err := NewHDFSClient("dirtydeeds.cse.buffalo.edu:9000")
+	client, err := NewHDFSClient(*hdfsAddr)
 	require.Nil(err)
 	require.NotNil(client)
 
@@ -47,9 +57,14 @@ func testWriteData(f *easyfiles.File, require *require.Assertions) {
 
 func TestOpenBadPath(t *testing.T) {
 	t.Parallel()
+
+	if strings.Compare(*hdfsAddr, "") == 0 {
+		t.Skip(fmt.Sprintf("No HDFS address specified"))
+	}
+
 	require := require.New(t)
 
-	client, err := NewHDFSClient("dirtydeeds.cse.buffalo.edu:9000")
+	client, err := NewHDFSClient(*hdfsAddr)
 	require.Nil(err)
 	require.NotNil(client)
 
@@ -61,9 +76,14 @@ func TestOpenBadPath(t *testing.T) {
 
 func TestOpenGzUnknown(t *testing.T) {
 	t.Parallel()
+
+	if strings.Compare(*hdfsAddr, "") == 0 {
+		t.Skip(fmt.Sprintf("No HDFS address specified"))
+	}
+
 	require := require.New(t)
 
-	client, err := NewHDFSClient("dirtydeeds.cse.buffalo.edu:9000")
+	client, err := NewHDFSClient(*hdfsAddr)
 	require.Nil(err)
 	require.NotNil(client)
 
@@ -76,9 +96,14 @@ func TestOpenGzUnknown(t *testing.T) {
 
 func TestOpenCreate(t *testing.T) {
 	t.Parallel()
+
+	if strings.Compare(*hdfsAddr, "") == 0 {
+		t.Skip(fmt.Sprintf("No HDFS address specified"))
+	}
+
 	require := require.New(t)
 
-	client, err := NewHDFSClient("dirtydeeds.cse.buffalo.edu:9000")
+	client, err := NewHDFSClient(*hdfsAddr)
 	require.Nil(err)
 	require.NotNil(client)
 
@@ -93,9 +118,14 @@ func TestOpenCreate(t *testing.T) {
 
 func TestOpenModes(t *testing.T) {
 	t.Parallel()
+
+	if strings.Compare(*hdfsAddr, "") == 0 {
+		t.Skip(fmt.Sprintf("No HDFS address specified"))
+	}
+
 	require := require.New(t)
 
-	client, err := NewHDFSClient("dirtydeeds.cse.buffalo.edu:9000")
+	client, err := NewHDFSClient(*hdfsAddr)
 	require.Nil(err)
 	require.NotNil(client)
 
@@ -130,9 +160,14 @@ func TestOpenModes(t *testing.T) {
 
 func TestReadWrite(t *testing.T) {
 	t.Parallel()
+
+	if strings.Compare(*hdfsAddr, "") == 0 {
+		t.Skip(fmt.Sprintf("No HDFS address specified"))
+	}
+
 	require := require.New(t)
 
-	client, err := NewHDFSClient("dirtydeeds.cse.buffalo.edu:9000")
+	client, err := NewHDFSClient(*hdfsAddr)
 	require.Nil(err)
 	require.NotNil(client)
 
@@ -155,9 +190,14 @@ func TestReadWrite(t *testing.T) {
 
 func TestReadWriteGz(t *testing.T) {
 	t.Parallel()
+
+	if strings.Compare(*hdfsAddr, "") == 0 {
+		t.Skip(fmt.Sprintf("No HDFS address specified"))
+	}
+
 	require := require.New(t)
 
-	client, err := NewHDFSClient("dirtydeeds.cse.buffalo.edu:9000")
+	client, err := NewHDFSClient(*hdfsAddr)
 	require.Nil(err)
 	require.NotNil(client)
 
@@ -179,7 +219,12 @@ func TestReadWriteGz(t *testing.T) {
 }
 
 func TestMain(m *testing.M) {
-	log.SetLevel(log.DebugLevel)
-	// call flag.Parse() here if TestMain uses flags
+	//log.SetLevel(log.DebugLevel)
+	flag.Parse()
+
+	if strings.Compare(*hdfsAddr, "") == 0 {
+		log.Warnf("HDFS address was not set. All tests will be skipped")
+	}
+
 	os.Exit(m.Run())
 }
