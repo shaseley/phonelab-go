@@ -30,6 +30,14 @@ type PhonelabSourceInfo struct {
 	DateRange *daterange.DateRange
 }
 
+func (info *PhonelabSourceInfo) Type() string {
+	return "phonelab-device"
+}
+
+func (info *PhonelabSourceInfo) Context() string {
+	return fmt.Sprintf("%v_%v", info.DeviceId, info.BootId)
+}
+
 func NewPhonelabSourceProcessor(sourceInfo *PhonelabSourceInfo, errHandler ErrHandler) (*PhonelabSourceProcessor, error) {
 	path := sourceInfo.Path
 	device := sourceInfo.DeviceId
@@ -174,16 +182,14 @@ func (psg *PhonelabSourceGenerator) Process() <-chan *PipelineSourceInstance {
 					}
 					bootids := info.BootIds()
 					for _, bootid := range bootids {
-						psInfo := make(PipelineSourceInfo)
-						psInfo["type"] = "phonelab-device"
-						sourceInfo := &PhonelabSourceInfo{}
-						sourceInfo.DeviceId = device
-						sourceInfo.BootId = bootid
-						sourceInfo.Path = basePath
-						sourceInfo.HdfsAddr = hdfsAddr
-						sourceInfo.DateRange = dateRange
-						sourceInfo.StitchInfo = info
-						psInfo["source_info"] = sourceInfo
+						sourceInfo := &PhonelabSourceInfo{
+							DeviceId:   device,
+							BootId:     bootid,
+							Path:       basePath,
+							HdfsAddr:   hdfsAddr,
+							DateRange:  dateRange,
+							StitchInfo: info,
+						}
 
 						psp, err := NewPhonelabSourceProcessor(sourceInfo, psg.ErrHandler)
 						if err != nil {
@@ -195,7 +201,7 @@ func (psg *PhonelabSourceGenerator) Process() <-chan *PipelineSourceInstance {
 						}
 						sourceChan <- &PipelineSourceInstance{
 							Processor: psp,
-							Info:      psInfo,
+							Info:      sourceInfo,
 						}
 					}
 				}

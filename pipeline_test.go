@@ -69,7 +69,6 @@ func (e *emitterGenerator) Process() <-chan *PipelineSourceInstance {
 		for _, val := range e.sizes {
 			outChan <- &PipelineSourceInstance{
 				Processor: &emitter{val},
-				Info:      make(PipelineSourceInfo),
 			}
 		}
 		close(outChan)

@@ -266,17 +266,15 @@ func (c *countingProcessorGen) GenerateProcessor(source *PipelineSourceInstance,
 	}
 
 	var filename string
-	if _, ok := source.Info["file_name"]; ok {
-		filename = source.Info["file_name"].(string)
-	} else {
-		// No filename. Try to get bootid
-		if _, ok := source.Info["source_info"]; !ok {
-			fmt.Fprintln(os.Stderr, "Did not find file_name or deviceid")
-			return nil
-		}
-		sourceInfo := source.Info["source_info"].(*PhonelabSourceInfo)
-		filename = fmt.Sprintf("%v->%v", sourceInfo.DeviceId, sourceInfo.BootId)
+
+	switch t := source.Info.(type) {
+
+	case *TextFileSourceInfo:
+		filename = t.Filename
+	case *PhonelabSourceInfo:
+		filename = fmt.Sprintf("%v->%v", t.DeviceId, t.BootId)
 	}
+
 	return NewSimpleProcessor(source.Processor, &countingHandler{
 		count:     0,
 		increment: increment,
@@ -483,13 +481,14 @@ type checkProcessorGen struct {
 
 func (gen *checkProcessorGen) GenerateProcessor(source *PipelineSourceInstance,
 	kwargs map[string]interface{}) Processor {
+
 	cp := &checkProcessorHandler{
 		lastLine:  0,
 		lineCount: 0,
 		lastTime:  0.0,
 		t:         gen.t,
 		manager:   gen.manager,
-		filename:  source.Info["file_name"].(string),
+		filename:  source.Info.Context(),
 	}
 
 	return NewSimpleProcessor(source.Processor, cp)

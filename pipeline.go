@@ -4,8 +4,10 @@ const (
 	DEFAULT_MAX_CONCURRENCY = 0
 )
 
-// Key-value pair Information pertaining to the source of pipeline data.
-type PipelineSourceInfo map[string]interface{}
+type PipelineSourceInfo interface {
+	Type() string
+	Context() string
+}
 
 type PipelineSourceInstance struct {
 	Processor Processor

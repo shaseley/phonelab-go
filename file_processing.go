@@ -11,6 +11,18 @@ type TextFileProcessor struct {
 	ErrHandler
 }
 
+type TextFileSourceInfo struct {
+	Filename string
+}
+
+func (info *TextFileSourceInfo) Type() string {
+	return "file"
+}
+
+func (info *TextFileSourceInfo) Context() string {
+	return info.Filename
+}
+
 type ErrHandler func(error)
 
 func NewTextFileProcessor(file string, errHandler ErrHandler) *TextFileProcessor {
@@ -75,9 +87,9 @@ func (tf *TextFileSourceGenerator) Process() <-chan *PipelineSourceInstance {
 
 	go func() {
 		for _, file := range tf.Files {
-			info := make(PipelineSourceInfo)
-			info["type"] = "file"
-			info["file_name"] = file
+			info := &TextFileSourceInfo{
+				Filename: file,
+			}
 
 			sourceChan <- &PipelineSourceInstance{
 				Processor: NewTextFileProcessor(file, tf.ErrHandler),

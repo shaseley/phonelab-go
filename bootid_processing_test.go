@@ -58,12 +58,9 @@ func TestMultPhonelabSourceProcessor(t *testing.T) {
 	for sourceInst := range sourceChan {
 		pos += 1
 
-		tp, ok := sourceInst.Info["type"].(string)
+		sourceInfo, ok := sourceInst.Info.(*PhonelabSourceInfo)
 		assert.True(ok)
-		assert.Equal("phonelab-device", tp)
-
-		sourceInfo, ok := sourceInst.Info["source_info"].(*PhonelabSourceInfo)
-		assert.True(ok)
+		assert.Equal("phonelab-device", sourceInfo.Type())
 
 		expected := 0
 

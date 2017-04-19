@@ -45,22 +45,20 @@ func TestMultTextFileProcessor(t *testing.T) {
 	for sourceInst := range sourceChan {
 		pos += 1
 
-		tp, ok := sourceInst.Info["type"].(string)
-		assert.True(ok)
-		assert.Equal("file", tp)
+		assert.Equal("file", sourceInst.Info.Type())
 
-		name, ok := sourceInst.Info["file_name"].(string)
+		info, ok := sourceInst.Info.(*TextFileSourceInfo)
 		assert.True(ok)
 
 		expected := 0
 
-		switch name {
+		switch info.Filename {
 		case "test/test.log":
 			expected = 5000
 		case "test/test.10000.log":
 			expected = 10000
 		default:
-			t.Fatal("Unexpected file: " + name)
+			t.Fatal("Unexpected file: " + info.Filename)
 		}
 
 		logs := 0
