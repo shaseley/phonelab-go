@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
+	"path"
 
 	"github.com/gurupras/go-easyfiles"
 	"github.com/shaseley/phonelab-go/hdfs"
@@ -15,9 +15,8 @@ type HDFSSerializer struct {
 
 type HDFSSerializerArgs struct {
 	*hdfs.HDFSClient
-	Outdir   string
 	Filename string
-	easyfiles.FileType
+	FileType
 }
 
 func (h *HDFSSerializer) Serialize(obj interface{}, args interface{}) error {
@@ -26,14 +25,15 @@ func (h *HDFSSerializer) Serialize(obj interface{}, args interface{}) error {
 	hdfsArgs := args.(*HDFSSerializerArgs)
 
 	//Mkdirs
-	err = hdfsArgs.MkdirAll(hdfsArgs.Outdir, 0775)
+	outdir := path.Dir(hdfsArgs.Filename)
+	err = hdfsArgs.MkdirAll(outdir, 0775)
 	if err != nil {
-		return fmt.Errorf("Failed to create directory: %v: %v", hdfsArgs.Outdir, err)
+		return fmt.Errorf("Failed to create directory: %v: %v", outdir, err)
 	}
 
-	filePath := filepath.Join(hdfsArgs.Outdir, hdfsArgs.Filename)
+	filePath := hdfsArgs.Filename
 
-	file, err := hdfs.OpenFile(filePath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, hdfsArgs.FileType, hdfsArgs.HDFSClient)
+	file, err := hdfs.OpenFile(filePath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, easyfiles.FileType(hdfsArgs.FileType), hdfsArgs.HDFSClient)
 	if err != nil {
 		return fmt.Errorf("Failed to open file: %v: %v", filePath, err)
 	}

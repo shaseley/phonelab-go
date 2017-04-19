@@ -2,40 +2,37 @@ package serialize
 
 import (
 	"encoding/json"
+	"flag"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
-
-	"gopkg.in/yaml.v2"
 
 	"github.com/gurupras/go-easyfiles"
 	"github.com/shaseley/phonelab-go/hdfs"
 	"github.com/stretchr/testify/require"
 )
 
-var confFile string = "test/hdfs-conf.yaml"
-
 type hdfsTestConf struct {
 	Addr string `yaml:"addr"`
 	Path string `yaml:"path"`
 }
 
+var (
+	hdfsAddr = flag.String("hdfs-addr", "", "Address of HDFS server")
+	hdfsPath = flag.String("hdfs-path", "/test", "Base path under which serialization is tested")
+)
+
 func TestHDFSSerialize(t *testing.T) {
-	if !easyfiles.Exists(confFile) {
-		t.Skip(fmt.Sprintf("HDFS Configuration file '%s' not found!", confFile))
+	if strings.Compare(*hdfsAddr, "") == 0 {
+		t.Skip(fmt.Sprintf("HDFS address not specified"))
 	}
 
 	require := require.New(t)
 
-	b, err := ioutil.ReadFile(confFile)
-	require.Nil(err)
-
-	conf := hdfsTestConf{}
-	err = yaml.Unmarshal(b, &conf)
-	require.Nil(err)
+	conf := hdfsTestConf{*hdfsAddr, *hdfsPath}
 
 	client, err := hdfs.NewHDFSClient(conf.Addr)
 	require.Nil(err)
@@ -43,9 +40,8 @@ func TestHDFSSerialize(t *testing.T) {
 
 	// Add an extra directory just to test mkdirAll
 	outdir := filepath.Join(conf.Path, "test-hdfs-serialize")
-	filename := "test-serialize.gz"
-	filePath := filepath.Join(outdir, filename)
-	hdfsArgs := &HDFSSerializerArgs{client, outdir, filename, easyfiles.GZ_TRUE}
+	filePath := filepath.Join(outdir, "test-serialize.gz")
+	hdfsArgs := &HDFSSerializerArgs{client, filePath, GZ_TRUE}
 
 	data := []string{"Hello", "World"}
 
@@ -64,4 +60,10 @@ func TestHDFSSerialize(t *testing.T) {
 	require.Nil(err)
 
 	require.True(reflect.DeepEqual(data, got))
+}
+
+func TestMain(m *testing.M) {
+	fmt.Printf("%v\n", os.Args)
+	flag.Parse()
+	os.Exit(m.Run())
 }
