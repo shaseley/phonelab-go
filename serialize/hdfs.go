@@ -22,7 +22,10 @@ type HDFSSerializerArgs struct {
 func (h *HDFSSerializer) Serialize(obj interface{}, args interface{}) error {
 	var err error
 
-	hdfsArgs := args.(*HDFSSerializerArgs)
+	hdfsArgs, ok := args.(*HDFSSerializerArgs)
+	if !ok {
+		return fmt.Errorf("Invalid args type.\nExpecting: %t\nGot: %t\n", HDFSSerializerArgs{}, args)
+	}
 
 	//Mkdirs
 	outdir := path.Dir(hdfsArgs.Filename)

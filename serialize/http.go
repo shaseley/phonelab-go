@@ -23,7 +23,10 @@ type HTTPSerializerArgs struct {
 }
 
 func (h *HTTPSerializer) Serialize(obj interface{}, args interface{}) error {
-	httpArgs := args.(*HTTPSerializerArgs)
+	httpArgs, ok := args.(*HTTPSerializerArgs)
+	if !ok {
+		return fmt.Errorf("Invalid args type.\nExpecting: %t\nGot: %t\n", HTTPSerializerArgs{}, args)
+	}
 
 	// FIXME: Update this to use the proper way of joining URLs
 	url := httpArgs.Url + "/" + httpArgs.Relpath

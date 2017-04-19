@@ -2,6 +2,7 @@ package serialize
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path"
 
@@ -16,7 +17,10 @@ type LocalSerializerArgs struct {
 }
 
 func (h *LocalSerializer) Serialize(obj interface{}, args interface{}) error {
-	localArgs := args.(*LocalSerializerArgs)
+	localArgs, ok := args.(*LocalSerializerArgs)
+	if !ok {
+		return fmt.Errorf("Invalid args type.\nExpecting: %t\nGot: %t\n", LocalSerializerArgs{}, args)
+	}
 
 	dir := path.Dir(localArgs.Filename)
 	if !easyfiles.Exists(dir) {
