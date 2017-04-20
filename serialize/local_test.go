@@ -22,8 +22,7 @@ func TestLocalSerialize(t *testing.T) {
 	filename := "test-local-serializer.gz"
 	filePath := filepath.Join(outdir, filename)
 
-	localArgs := &LocalSerializerArgs{filePath}
-	err := serializer.Serialize(data, localArgs)
+	err := serializer.Serialize(data, filePath)
 	require.Nil(err)
 	defer os.RemoveAll(outdir)
 
@@ -45,7 +44,6 @@ func TestLocalSerializeBadArgs(t *testing.T) {
 
 	serializer := &LocalSerializer{}
 
-	args := struct{}{}
-	err := serializer.Serialize(nil, args)
+	err := serializer.Serialize(nil, "")
 	require.NotNil(err)
 }

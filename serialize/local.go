@@ -2,7 +2,6 @@ package serialize
 
 import (
 	"encoding/json"
-	"fmt"
 	"os"
 	"path"
 
@@ -12,17 +11,8 @@ import (
 type LocalSerializer struct {
 }
 
-type LocalSerializerArgs struct {
-	Filename string
-}
-
-func (h *LocalSerializer) Serialize(obj interface{}, args interface{}) error {
-	localArgs, ok := args.(*LocalSerializerArgs)
-	if !ok {
-		return fmt.Errorf("Invalid args type.\nExpecting: %t\nGot: %t\n", LocalSerializerArgs{}, args)
-	}
-
-	dir := path.Dir(localArgs.Filename)
+func (h *LocalSerializer) Serialize(obj interface{}, filename string) error {
+	dir := path.Dir(filename)
 	if !easyfiles.Exists(dir) {
 		if err := easyfiles.Makedirs(dir); err != nil {
 			return err
@@ -32,7 +22,7 @@ func (h *LocalSerializer) Serialize(obj interface{}, args interface{}) error {
 	if b, err := json.MarshalIndent(obj, "", "    "); err != nil {
 		return err
 	} else {
-		f, err := easyfiles.Open(localArgs.Filename, os.O_CREATE|os.O_WRONLY, easyfiles.GZ_UNKNOWN)
+		f, err := easyfiles.Open(filename, os.O_CREATE|os.O_WRONLY, easyfiles.GZ_UNKNOWN)
 		if err != nil {
 			return err
 		}

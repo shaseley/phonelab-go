@@ -40,10 +40,10 @@ func TestHTTPSerialize(t *testing.T) {
 	// Now upload some data
 	data := []string{"Hello", "World"}
 
-	httpArgs := &HTTPSerializerArgs{"http://127.0.0.1:41121/upload", "dummyPath/http-upload-test.gz"}
+	url := "http://127.0.0.1:41121/upload/dummyPath/http-upload-test.gz"
 
 	serializer := &HTTPSerializer{}
-	err := serializer.Serialize(data, httpArgs)
+	err := serializer.Serialize(data, url)
 	require.Nil(err)
 	defer os.RemoveAll("test/dummyPath/")
 
@@ -67,7 +67,6 @@ func TestHTTPSerializerBadArgs(t *testing.T) {
 
 	serializer := &HTTPSerializer{}
 
-	args := struct{}{}
-	err := serializer.Serialize(nil, args)
+	err := serializer.Serialize(nil, "")
 	require.NotNil(err)
 }

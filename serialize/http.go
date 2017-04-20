@@ -17,20 +17,7 @@ import (
 type HTTPSerializer struct {
 }
 
-type HTTPSerializerArgs struct {
-	Url     string
-	Relpath string
-}
-
-func (h *HTTPSerializer) Serialize(obj interface{}, args interface{}) error {
-	httpArgs, ok := args.(*HTTPSerializerArgs)
-	if !ok {
-		return fmt.Errorf("Invalid args type.\nExpecting: %t\nGot: %t\n", HTTPSerializerArgs{}, args)
-	}
-
-	// FIXME: Update this to use the proper way of joining URLs
-	url := httpArgs.Url + "/" + httpArgs.Relpath
-
+func (h *HTTPSerializer) Serialize(obj interface{}, url string) error {
 	request := gorequest.New()
 	resp, _, errors := request.Post(url).Send(obj).End()
 	if len(errors) > 0 {

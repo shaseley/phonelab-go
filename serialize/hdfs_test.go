@@ -34,12 +34,11 @@ func TestHDFSSerialize(t *testing.T) {
 	// Add an extra directory just to test mkdirAll
 	outdir := filepath.Join(*hdfsPath, "test-hdfs-serialize")
 	filePath := filepath.Join(outdir, "test-serialize.gz")
-	hdfsArgs := &HDFSSerializerArgs{filePath, GZ_TRUE}
 
 	data := []string{"Hello", "World"}
 
 	serializer := &HDFSSerializer{*hdfsAddr}
-	err = serializer.Serialize(data, hdfsArgs)
+	err = serializer.Serialize(data, filePath)
 	require.Nil(err)
 	defer client.Remove(outdir)
 
@@ -64,7 +63,6 @@ func TestHDFSSerializerBadArgs(t *testing.T) {
 
 	serializer := &HDFSSerializer{*hdfsAddr}
 
-	args := struct{}{}
-	err := serializer.Serialize(nil, args)
+	err := serializer.Serialize(nil, "")
 	require.NotNil(err)
 }
