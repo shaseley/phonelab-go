@@ -1,6 +1,7 @@
 package phonelab
 
 import (
+	"errors"
 	"fmt"
 	"reflect"
 	"regexp"
@@ -97,7 +98,14 @@ func (p *LogcatParser) Regex() []*regexp.Regexp {
 	return p.Patterns
 }
 
+var DoNewParse = true
+
 func (p *LogcatParser) Parse(line string) (*Logline, error) {
+
+	if DoNewParse {
+		return parseLoglineString(line)
+	}
+
 	p.l.Lock()
 	defer p.l.Unlock()
 
@@ -197,4 +205,282 @@ func (l *Logline) Less(s interface{}) (ret bool, err error) {
 	}
 out:
 	return
+}
+
+type logcatStringParser struct {
+	pos       int
+	length    int
+	line      string
+	lastToken string
+}
+
+func ws(c uint8) bool {
+	switch c {
+	default:
+		return false
+	case '\n':
+		fallthrough
+	case '\r':
+		fallthrough
+	case '\t':
+		fallthrough
+	case ' ':
+		return true
+	}
+}
+
+func (p *logcatStringParser) advance() {
+
+	// Skip preliminary whitespace
+	for p.pos < p.length && ws(p.line[p.pos]) {
+		p.pos += 1
+	}
+}
+
+func (p *logcatStringParser) nextToken() (string, bool) {
+
+	p.advance()
+
+	if p.pos >= p.length {
+		return "", false
+	}
+
+	start := p.pos
+
+	// increment until we get a whitespace character or the end
+	for p.pos < p.length && !ws(p.line[p.pos]) {
+		p.pos += 1
+	}
+
+	//fmt.Println("Next token:", p.line[start:p.pos])
+
+	// Position is now just past the token
+	p.lastToken = p.line[start:p.pos]
+	return p.lastToken, true
+}
+
+func (p *logcatStringParser) parseFixedLenString(expected int) (string, error) {
+	if data, ok := p.nextToken(); !ok {
+		return "", errors.New("LC Parser Error: Expected string token, got EOF")
+	} else if len(data) != expected {
+		return "", fmt.Errorf("LC Parser Error: Invalid string length. Expected %v got %v", expected, len(data))
+	} else {
+		return data, nil
+	}
+}
+
+func (p *logcatStringParser) parseInt64() (int64, error) {
+	if data, ok := p.nextToken(); !ok {
+		return 0, errors.New("LC Parser Error: Expected int token, got EOF")
+	} else if i, err := strconv.ParseInt(data, 10, 64); err != nil {
+		return 0, err
+	} else {
+		return i, nil
+	}
+}
+
+func (p *logcatStringParser) parseFloat64() (float64, error) {
+	if data, ok := p.nextToken(); !ok {
+		return 0.0, errors.New("LC Parser Error: Expected int token, got EOF")
+	} else if f, err := strconv.ParseFloat(data, 64); err != nil {
+		return 0.0, err
+	} else {
+		return f, nil
+	}
+}
+
+func (p *logcatStringParser) parseTagAndPayload() (string, string, error) {
+	p.advance()
+
+	if p.pos >= p.length {
+		return "", "", errors.New("LC Parser Error: Missing tag and payload")
+	}
+
+	start := p.pos
+
+	// increment until we get a whitespace character or the end
+	for p.pos < p.length-1 && p.line[p.pos:p.pos+2] != ": " {
+		p.pos += 1
+	}
+
+	if p.pos >= p.length-1 {
+		return "", "", errors.New("LC Parser Error: Missing tag and payload")
+	}
+
+	// Position is now just past the token or at the end
+	tag := strings.TrimSpace(p.line[start:p.pos])
+	payload := strings.TrimSpace(p.line[p.pos+2:])
+	return tag, payload, nil
+}
+
+func (parser *logcatStringParser) parseDateTime() (timeOut time.Time, nanoTime int64, err error) {
+
+	datePart, ok1 := parser.nextToken()
+	timePart, ok2 := parser.nextToken()
+
+	if !ok1 || !ok2 {
+		err = errors.New("LC Parser Error: Expected date string token, got EOF")
+		return
+	}
+
+	datetime := datePart + " " + timePart
+
+	// Datetime Nanoseconds
+	if nanoTime, err = strconv.ParseInt(datetime[20:], 0, 64); err != nil {
+		return
+	}
+
+	if len(datetime) > 26 {
+		datetime = datetime[:26]
+	}
+
+	if timeOut, err = strptime.Parse(datetime, "%Y-%m-%d %H:%M:%S.%f"); err != nil {
+		return
+	}
+
+	return
+}
+
+func (parser *logcatStringParser) parseTraceTimeBrackets() (float64, error) {
+	parser.advance()
+
+	if parser.pos >= parser.length || parser.line[parser.pos] != '[' {
+		return 0.0, errors.New("Invalid tracetime format. Expected [tracetime] (1)")
+	}
+
+	// Skip open [ and whitespace
+	parser.pos += 1
+	parser.advance()
+
+	t, ok := parser.nextToken()
+	if !ok || parser.pos >= parser.length || t[len(t)-1] != ']' {
+		return 0.0, errors.New("Invalid tracetime format. Expected [tracetime] (2)")
+	}
+	t = t[:len(t)-1]
+
+	return strconv.ParseFloat(t, 64)
+}
+
+func (parser *logcatStringParser) parseLoglinePhonelabFmt() (*Logline, error) {
+
+	// Skip the next 2 fields after device id
+	const numSkips = 2
+
+	for i := 0; i < numSkips; i += 1 {
+		if _, ok := parser.nextToken(); !ok {
+			return nil, errors.New("LC Parser Error: unexpected EOF")
+		}
+	}
+
+	ll := &Logline{}
+
+	var err error
+	var ok bool
+
+	if ll.BootId, ok = parser.nextToken(); !ok {
+		return nil, errors.New("LC Parser Error: Expected boot_id token, got EOF")
+	}
+
+	if ll.LogcatToken, err = parser.parseInt64(); err != nil {
+		return nil, err
+	}
+
+	if ll.TraceTime, err = parser.parseFloat64(); err != nil {
+		return nil, err
+	}
+
+	if ll.Datetime, ll.DatetimeNanos, err = parser.parseDateTime(); err != nil {
+		return nil, err
+	}
+
+	if v, err := parser.parseInt64(); err != nil {
+		return nil, err
+	} else {
+		ll.Pid = int32(v)
+	}
+
+	if v, err := parser.parseInt64(); err != nil {
+		return nil, err
+	} else {
+		ll.Tid = int32(v)
+	}
+
+	if ll.Level, err = parser.parseFixedLenString(1); err != nil {
+		return nil, err
+	}
+
+	if ll.Tag, ok = parser.nextToken(); !ok {
+		return nil, errors.New("LC Parser Error: Expected tag token, got EOF")
+	}
+
+	ll.Payload = strings.TrimSpace(parser.line[parser.pos:])
+	ll.Line = parser.line
+
+	return ll, nil
+
+}
+
+func (parser *logcatStringParser) parseLoglineTraceTimeFmt() (*Logline, error) {
+	// Assume we've already parsed the first field.
+	ll := &Logline{
+		BootId: parser.lastToken,
+	}
+
+	var err error
+
+	if ll.Datetime, ll.DatetimeNanos, err = parser.parseDateTime(); err != nil {
+		return nil, err
+	}
+
+	if ll.LogcatToken, err = parser.parseInt64(); err != nil {
+		return nil, err
+	}
+
+	if ll.TraceTime, err = parser.parseTraceTimeBrackets(); err != nil {
+		return nil, err
+	}
+
+	if v, err := parser.parseInt64(); err != nil {
+		return nil, err
+	} else {
+		ll.Pid = int32(v)
+	}
+
+	if v, err := parser.parseInt64(); err != nil {
+		return nil, err
+	} else {
+		ll.Tid = int32(v)
+	}
+
+	if ll.Level, err = parser.parseFixedLenString(1); err != nil {
+		return nil, err
+	}
+
+	if ll.Tag, ll.Payload, err = parser.parseTagAndPayload(); err != nil {
+		return nil, err
+	}
+
+	ll.Line = parser.line
+
+	return ll, nil
+}
+
+func parseLoglineString(line string) (*Logline, error) {
+	parser := &logcatStringParser{
+		line:   line,
+		length: len(line),
+	}
+
+	firstField, ok := parser.nextToken()
+	if !ok {
+		return nil, errors.New("LC Parser Error: Invalid line")
+	}
+
+	if len(firstField) == 40 {
+		return parser.parseLoglinePhonelabFmt()
+	} else if len(firstField) == 36 {
+		return parser.parseLoglineTraceTimeFmt()
+	} else {
+		return nil, errors.New("LC Parser Error: Unsupported logcat format")
+	}
 }
