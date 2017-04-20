@@ -313,32 +313,97 @@ func (p *logcatStringParser) parseTagAndPayload() (string, string, error) {
 	return tag, payload, nil
 }
 
-func (parser *logcatStringParser) parseDateTime() (timeOut time.Time, nanoTime int64, err error) {
+func parseInts(s string, starts, lengths []int) ([]int, error) {
+	if len(starts) != len(lengths) {
+		return nil, errors.New("starts and lengths must be same length")
+	}
 
-	datePart, ok1 := parser.nextToken()
-	timePart, ok2 := parser.nextToken()
+	l := len(starts)
+	res := make([]int, l, l)
 
-	if !ok1 || !ok2 {
+	var err error
+
+	for i := 0; i < l; i++ {
+		start, end := starts[i], starts[i]+lengths[i]
+		res[i], err = strconv.Atoi(s[start:end])
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return res, nil
+}
+
+func (parser *logcatStringParser) parseDateTime() (timeOut time.Time, nanoTime int, err error) {
+
+	var datePart string
+
+	datePart, err = parser.parseFixedLenString(10)
+	if err != nil {
+		return
+	}
+
+	// Now parse
+	if datePart[4] != '-' || datePart[7] != '-' {
+		err = errors.New("LC Parser Error: Invalid date format")
+		return
+	}
+
+	var dateParsed []int
+
+	dateParsed, err = parseInts(datePart, []int{0, 5, 8}, []int{4, 2, 2})
+	if err != nil {
+		return
+	}
+
+	timePart, ok := parser.nextToken()
+
+	if !ok {
 		err = errors.New("LC Parser Error: Expected date string token, got EOF")
 		return
 	}
 
-	datetime := datePart + " " + timePart
-
-	// Datetime Nanoseconds
-	if nanoTime, err = strconv.ParseInt(datetime[20:], 0, 64); err != nil {
+	if len(timePart) < 10 || timePart[2] != ':' || timePart[5] != ':' || timePart[8] != '.' {
+		err = errors.New("LC Parser Error: Invalid time format")
 		return
 	}
 
-	if len(datetime) > 26 {
-		datetime = datetime[:26]
-	}
+	var timeParsed []int
 
-	if timeOut, err = strptime.Parse(datetime, "%Y-%m-%d %H:%M:%S.%f"); err != nil {
+	timeParsed, err = parseInts(timePart, []int{0, 3, 6}, []int{2, 2, 2})
+	if err != nil {
 		return
 	}
+
+	// Finally, ns
+	nsPart := timePart[9:]
+	nanoTime, err = strconv.Atoi(nsPart)
+	if err != nil {
+		return
+	}
+
+	if len(nsPart) > 9 {
+		err = fmt.Errorf("Invalid nanotime: %v", nsPart)
+	}
+
+	for i := 0; i < 9-len(nsPart); i++ {
+		nanoTime *= 10
+	}
+
+	timeOut = time.Date(dateParsed[0], time.Month(dateParsed[1]), dateParsed[2],
+		timeParsed[0], timeParsed[1], timeParsed[2], nanoTime, est)
 
 	return
+}
+
+var est *time.Location
+
+func init() {
+	var err error
+
+	if est, err = time.LoadLocation("EST"); err != nil {
+		panic(fmt.Sprintf("Unable to set EST: %v", err))
+	}
 }
 
 func (parser *logcatStringParser) parseTraceTimeBrackets() (float64, error) {
@@ -389,8 +454,11 @@ func (parser *logcatStringParser) parseLoglinePhonelabFmt() (*Logline, error) {
 		return nil, err
 	}
 
-	if ll.Datetime, ll.DatetimeNanos, err = parser.parseDateTime(); err != nil {
+	var nanos int
+	if ll.Datetime, nanos, err = parser.parseDateTime(); err != nil {
 		return nil, err
+	} else {
+		ll.DatetimeNanos = int64(nanos)
 	}
 
 	if v, err := parser.parseInt64(); err != nil {
@@ -427,9 +495,12 @@ func (parser *logcatStringParser) parseLoglineTraceTimeFmt() (*Logline, error) {
 	}
 
 	var err error
+	var nanos int
 
-	if ll.Datetime, ll.DatetimeNanos, err = parser.parseDateTime(); err != nil {
+	if ll.Datetime, nanos, err = parser.parseDateTime(); err != nil {
 		return nil, err
+	} else {
+		ll.DatetimeNanos = int64(nanos)
 	}
 
 	if ll.LogcatToken, err = parser.parseInt64(); err != nil {
