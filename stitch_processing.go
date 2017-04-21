@@ -3,11 +3,11 @@ package phonelab
 import (
 	"fmt"
 	"path/filepath"
+	"strings"
 
-	"github.com/bmatcuk/doublestar"
 	"github.com/fatih/set"
-	"github.com/gurupras/go-hdfs-doublestar"
-	"github.com/shaseley/phonelab-go/hdfs"
+	"github.com/gurupras/go-easyfiles"
+	"github.com/gurupras/go-easyfiles/easyhdfs"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -19,6 +19,7 @@ type PhonelabRawProcessor struct {
 
 type PhonelabRawInfo struct {
 	*StitchInfo
+	FSInterface   easyfiles.FileSystemInterface
 	Path          string
 	ProcessedPath string
 	DeviceId      string
@@ -70,9 +71,12 @@ func (prg *PhonelabRawGenerator) Process() <-chan *PipelineSourceInstance {
 		hdfsAddr = v.(string)
 	}
 
-	client, err := hdfs.NewHDFSClient(hdfsAddr)
-	if err != nil {
-		panic(fmt.Sprintf("Unable to connect to HDFS namenode at '%v': %v", hdfsAddr, err))
+	var fs easyfiles.FileSystemInterface
+
+	if strings.Compare(hdfsAddr, "") == 0 {
+		fs = easyfiles.LocalFS
+	} else {
+		fs = easyhdfs.NewHDFSFileSystem(hdfsAddr)
 	}
 
 	// Get processed path
@@ -90,15 +94,8 @@ func (prg *PhonelabRawGenerator) Process() <-chan *PipelineSourceInstance {
 			log.Infof("device=%v basePath=%v", device, basePath)
 			filePattern := filepath.Join(basePath, device, "time", "**/*.out.gz")
 			var files []string
-			var curFiles []string
 			var diffSet set.Interface
-			if client != nil {
-				// We're in HDFS mode
-				curFiles, err = hdfs_doublestar.Glob(client.Client, filePattern)
-				log.Infof("HDFS glob result: %v", files)
-			} else {
-				curFiles, err = doublestar.Glob(filePattern)
-			}
+			curFiles, err := fs.Glob(filePattern)
 			for _, obj := range curFiles {
 				currentFiles.Add(obj)
 			}
@@ -107,7 +104,7 @@ func (prg *PhonelabRawGenerator) Process() <-chan *PipelineSourceInstance {
 			// Try to pull and read info.json if it exists
 			infoJsonPath := filepath.Join(processedPath, device, "info.json")
 			log.Infof("infoJsonPath=%v", infoJsonPath)
-			if data, err := hdfs.ReadFile(infoJsonPath, client); err == nil {
+			if data, err := fs.ReadFile(infoJsonPath); err == nil {
 				log.Infof("Found info.json")
 				// We've processed a portion of the currentFiles.
 				// Don't re-process these
@@ -136,7 +133,7 @@ func (prg *PhonelabRawGenerator) Process() <-chan *PipelineSourceInstance {
 				DeviceId:      device,
 				Path:          basePath,
 				ProcessedPath: processedPath,
-				HdfsAddr:      hdfsAddr,
+				FSInterface:   fs,
 				StitchInfo:    info,
 			}
 

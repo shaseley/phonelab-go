@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/gurupras/go-easyfiles"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -21,6 +22,7 @@ func TestPhonelabSourceProcessor(t *testing.T) {
 	info, err := GetInfoFromFile("./test/phonelab_source/test-device-1/")
 	require.Nil(err)
 	sourceInfo.StitchInfo = info
+	sourceInfo.FSInterface = easyfiles.LocalFS
 
 	processor, err := NewPhonelabSourceProcessor(sourceInfo, func(e error) {
 		t.Log("Error: ", e)
@@ -100,6 +102,7 @@ func TestPhonelabSourceProcessorMux(t *testing.T) {
 	info, err := GetInfoFromFile("./test/phonelab_source/test-device-1/")
 	require.Nil(err)
 	sourceInfo.StitchInfo = info
+	sourceInfo.FSInterface = easyfiles.LocalFS
 
 	processor, err := NewPhonelabSourceProcessor(sourceInfo, func(e error) {
 		t.Log("Error: ", e)
