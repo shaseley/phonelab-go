@@ -214,7 +214,7 @@ func (conf *PipelineSourceConf) Expand() ([]string, error) {
 			if err != nil {
 				return nil, fmt.Errorf("Error globbing files: %v", err)
 			} else {
-				log.Infof("glob result: %v", files)
+				log.Debugf("glob result: %v", files)
 				allFiles = append(allFiles, files...)
 			}
 		}
@@ -253,7 +253,7 @@ func (conf *PipelineSourceConf) ToPipelineSourceGenerator() (PipelineSourceGener
 		return nil, errors.New("No files resolved from sources")
 	}
 
-	log.Infof("conf.Args=%v", conf.Args)
+	log.Debugf("conf.Args=%v", conf.Args)
 
 	switch conf.Type {
 	case PipelineSourceFile:
