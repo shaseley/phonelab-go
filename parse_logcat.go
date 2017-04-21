@@ -75,6 +75,8 @@ type LogcatParser struct {
 	curPattern   int
 	startPattern int
 	l            sync.Mutex
+
+	fieldParser *logcatFieldParser
 }
 
 func NewLogcatParser() *LogcatParser {
@@ -85,6 +87,7 @@ func NewLogcatParser() *LogcatParser {
 		curPattern:   0,
 		startPattern: 0,
 		StoreLogline: true,
+		fieldParser:  newLogcatFieldParser(),
 	}
 	parser.RegexParser = NewMultRegexParser(parser)
 	return parser
@@ -98,11 +101,14 @@ func (p *LogcatParser) Regex() []*regexp.Regexp {
 	return p.Patterns
 }
 
-var DoNewParse = true
+var ConfigDoNewParse = true
+var ConfigDoNewNewParse = false
 
 func (p *LogcatParser) Parse(line string) (*Logline, error) {
 
-	if DoNewParse {
+	if ConfigDoNewNewParse {
+		return p.fieldParser.Parse(line)
+	} else if ConfigDoNewParse {
 		return parseLoglineString(line)
 	}
 
@@ -404,6 +410,8 @@ func init() {
 	if est, err = time.LoadLocation("EST"); err != nil {
 		panic(fmt.Sprintf("Unable to set EST: %v", err))
 	}
+
+	initLocatFieldInfo()
 }
 
 func (parser *logcatStringParser) parseTraceTimeBrackets() (float64, error) {
@@ -553,5 +561,393 @@ func parseLoglineString(line string) (*Logline, error) {
 		return parser.parseLoglineTraceTimeFmt()
 	} else {
 		return nil, errors.New("LC Parser Error: Unsupported logcat format")
+	}
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// New Format (Field Declaration)
+
+type logcatFieldParser struct {
+	addrs       []interface{}
+	fieldParser *lineParserImpl
+	temp        *intermediateLine
+	sync.Mutex
+}
+
+func newLogcatFieldParser() *logcatFieldParser {
+	sz := len(phoneLabLogLineFields)
+	if len(traceLogLineFields) > sz {
+		sz = len(traceLogLineFields)
+	}
+
+	// FIXME: Hack to get around init order on tests.
+	if sz == 0 {
+		sz = 20
+	}
+
+	return &logcatFieldParser{
+		addrs:       make([]interface{}, sz, sz),
+		fieldParser: newLineParserImpl(nil, ""),
+		temp:        &intermediateLine{},
+	}
+}
+
+func (p *logcatFieldParser) Parse(line string) (*Logline, error) {
+	p.Lock()
+	defer p.Unlock()
+
+	if len(line) > 40 && line[36] != ' ' && line[36] != '\t' {
+		return p.parseLoglinePhoneLabFmt(line)
+	} else {
+		return p.parseLoglineTraceTimeFmt(line)
+	}
+}
+
+func (p *logcatFieldParser) parseLoglineTraceTimeFmt(line string) (*Logline, error) {
+
+	ll := &Logline{}
+	var skip string
+
+	p.addrs[0] = &ll.BootId
+	p.addrs[1] = &p.temp.Year
+	p.addrs[2] = &p.temp.Month
+	p.addrs[3] = &p.temp.Day
+	p.addrs[4] = &p.temp.Hour
+	p.addrs[5] = &p.temp.Minutes
+	p.addrs[6] = &p.temp.Sec
+	p.addrs[7] = &p.temp.Nanos
+	p.addrs[8] = &ll.LogcatToken
+	p.addrs[9] = &skip
+	p.addrs[10] = &ll.TraceTime
+	p.addrs[11] = &ll.Pid
+	p.addrs[12] = &ll.Tid
+	p.addrs[13] = &ll.Level
+	p.addrs[14] = &ll.Tag
+	p.addrs[15] = &p.temp.Payload
+
+	return p.commonParse(traceLogLineFields, line, ll)
+}
+
+type intermediateLine struct {
+	Year    int
+	Month   int
+	Day     int
+	Hour    int
+	Minutes int
+	Sec     int
+	Nanos   string
+	Payload string
+}
+
+func loglineFromIntermediate(ll *Logline, temp *intermediateLine) error {
+	// These need to be trimmed
+	ll.Tag = strings.TrimSpace(ll.Tag)
+	ll.Payload = strings.TrimSpace(temp.Payload)
+
+	nanoTime, err := strconv.Atoi(temp.Nanos)
+	if err != nil {
+		return fmt.Errorf("Error parsing nano time: %v", err)
+	}
+
+	if len(temp.Nanos) > 9 {
+		return fmt.Errorf("Invalid nanotime: %v", temp.Nanos)
+	}
+
+	for i := 0; i < 9-len(temp.Nanos); i++ {
+		nanoTime *= 10
+	}
+
+	ll.Datetime = time.Date(temp.Year, time.Month(temp.Month), temp.Day,
+		temp.Hour, temp.Minutes, temp.Sec, nanoTime, est)
+
+	ll.DatetimeNanos = int64(nanoTime)
+
+	return nil
+}
+
+func (p *logcatFieldParser) commonParse(fields []*FieldInfo, line string, ll *Logline) (*Logline, error) {
+	p.fieldParser.reset(line, fields)
+
+	for i, f := range fields {
+		if err := p.fieldParser.parseField(f, p.addrs[i]); err != nil {
+			return nil, err
+		}
+	}
+
+	ll.Line = line
+
+	if err := loglineFromIntermediate(ll, p.temp); err != nil {
+		return nil, err
+	}
+
+	return ll, nil
+}
+
+func (p *logcatFieldParser) parseLoglinePhoneLabFmt(line string) (*Logline, error) {
+
+	ll := &Logline{}
+
+	var skip string
+
+	p.addrs[0] = &skip
+	p.addrs[1] = &skip
+	p.addrs[2] = &skip
+	p.addrs[3] = &ll.BootId
+	p.addrs[4] = &ll.LogcatToken
+	p.addrs[5] = &ll.TraceTime
+	p.addrs[6] = &p.temp.Year
+	p.addrs[7] = &p.temp.Month
+	p.addrs[8] = &p.temp.Day
+	p.addrs[9] = &p.temp.Hour
+	p.addrs[10] = &p.temp.Minutes
+	p.addrs[11] = &p.temp.Sec
+	p.addrs[12] = &p.temp.Nanos
+	p.addrs[13] = &ll.Pid
+	p.addrs[14] = &ll.Tid
+	p.addrs[15] = &ll.Level
+	p.addrs[16] = &ll.Tag
+	p.addrs[17] = &p.temp.Payload
+
+	return p.commonParse(phoneLabLogLineFields, line, ll)
+}
+
+var (
+	traceLogLineFields    []*FieldInfo
+	phoneLabLogLineFields []*FieldInfo
+)
+
+func initLocatFieldInfo() {
+	traceLogLineFields = []*FieldInfo{
+		&FieldInfo{
+			Name:       "Boot ID",
+			FieldType:  FieldTypeString,
+			Length:     36,
+			LengthType: LengthTypeFixed,
+			StopChars:  DefaultStopChars,
+		},
+		&FieldInfo{
+			Name:       "Year",
+			FieldType:  FieldTypeInt,
+			Length:     4,
+			LengthType: LengthTypeFixed,
+			StopChars:  []uint8{'-'},
+			StopType:   StopTypeCharacterExclusive,
+		},
+		&FieldInfo{
+			Name:       "Month",
+			FieldType:  FieldTypeInt,
+			Length:     2,
+			LengthType: LengthTypeFixed,
+			StopChars:  []uint8{'-'},
+			StopType:   StopTypeCharacterExclusive,
+		},
+		&FieldInfo{
+			Name:       "Day",
+			FieldType:  FieldTypeInt,
+			Length:     2,
+			LengthType: LengthTypeFixed,
+			StopChars:  DefaultStopChars,
+		},
+		&FieldInfo{
+			Name:       "Hours",
+			FieldType:  FieldTypeInt,
+			Length:     2,
+			LengthType: LengthTypeFixed,
+			StopChars:  []uint8{':'},
+			StopType:   StopTypeCharacterExclusive,
+		},
+		&FieldInfo{
+			Name:       "Minutes",
+			FieldType:  FieldTypeInt,
+			Length:     2,
+			LengthType: LengthTypeFixed,
+			StopChars:  []uint8{':'},
+			StopType:   StopTypeCharacterExclusive,
+		},
+		&FieldInfo{
+			Name:       "Seconds",
+			FieldType:  FieldTypeInt,
+			Length:     2,
+			LengthType: LengthTypeFixed,
+			StopChars:  []uint8{'.'},
+			StopType:   StopTypeCharacterExclusive,
+		},
+		&FieldInfo{
+			Name:       "Nanos",
+			FieldType:  FieldTypeString,
+			Length:     9,
+			LengthType: LengthTypeMax,
+			StopChars:  DefaultStopChars,
+		},
+		&FieldInfo{
+			Name:      "Token",
+			FieldType: FieldTypeInt64,
+			StopChars: DefaultStopChars,
+		},
+		&FieldInfo{
+			Name:       "Skip",
+			Skip:       true,
+			FieldType:  FieldTypeString,
+			Length:     1,
+			LengthType: LengthTypeFixed,
+			StopChars:  []uint8{'['},
+			StopType:   StopTypeCharacterInclusive,
+		},
+		&FieldInfo{
+			Name:      "Tracetime",
+			FieldType: FieldTypeFloat64,
+			StopChars: []uint8{']'},
+			StopType:  StopTypeCharacterExclusive,
+		},
+		&FieldInfo{
+			Name:      "Pid",
+			FieldType: FieldTypeInt32,
+			StopChars: DefaultStopChars,
+		},
+		&FieldInfo{
+			Name:      "Tid",
+			FieldType: FieldTypeInt32,
+			StopChars: DefaultStopChars,
+		},
+		&FieldInfo{
+			Name:       "Level",
+			FieldType:  FieldTypeString,
+			Length:     1,
+			LengthType: LengthTypeFixed,
+			StopChars:  DefaultStopChars,
+		},
+		&FieldInfo{
+			Name:      "Tag",
+			FieldType: FieldTypeString,
+			StopChars: []uint8{':'},
+			StopType:  StopTypeCharacterExclusive,
+		},
+		&FieldInfo{
+			Name:      "Payload",
+			FieldType: FieldTypeRemainder,
+			StopChars: DefaultStopChars,
+		},
+	}
+
+	phoneLabLogLineFields = []*FieldInfo{
+		&FieldInfo{
+			Name:       "Skip1",
+			Skip:       true,
+			FieldType:  FieldTypeString,
+			StopChars:  DefaultStopChars,
+			Length:     40,
+			LengthType: LengthTypeFixed,
+		},
+		&FieldInfo{
+			Name:      "Skip2",
+			Skip:      true,
+			FieldType: FieldTypeString,
+			StopChars: DefaultStopChars,
+		},
+		&FieldInfo{
+			Name:      "Skip3",
+			Skip:      true,
+			FieldType: FieldTypeString,
+			StopChars: DefaultStopChars,
+		},
+
+		&FieldInfo{
+			Name:       "Boot ID",
+			FieldType:  FieldTypeString,
+			Length:     36,
+			LengthType: LengthTypeFixed,
+			StopChars:  DefaultStopChars,
+		},
+		&FieldInfo{
+			Name:      "Token",
+			FieldType: FieldTypeInt64,
+			StopChars: DefaultStopChars,
+		},
+		&FieldInfo{
+			Name:      "Tracetime",
+			FieldType: FieldTypeFloat64,
+			StopChars: DefaultStopChars,
+		},
+		&FieldInfo{
+			Name:       "Year",
+			FieldType:  FieldTypeInt,
+			Length:     4,
+			LengthType: LengthTypeFixed,
+			StopChars:  []uint8{'-'},
+			StopType:   StopTypeCharacterExclusive,
+		},
+		&FieldInfo{
+			Name:       "Month",
+			FieldType:  FieldTypeInt,
+			Length:     2,
+			LengthType: LengthTypeFixed,
+			StopChars:  []uint8{'-'},
+			StopType:   StopTypeCharacterExclusive,
+		},
+		&FieldInfo{
+			Name:       "Day",
+			FieldType:  FieldTypeInt,
+			Length:     2,
+			LengthType: LengthTypeFixed,
+			StopChars:  DefaultStopChars,
+		},
+		&FieldInfo{
+			Name:       "Hours",
+			FieldType:  FieldTypeInt,
+			Length:     2,
+			LengthType: LengthTypeFixed,
+			StopChars:  []uint8{':'},
+			StopType:   StopTypeCharacterExclusive,
+		},
+		&FieldInfo{
+			Name:       "Minutes",
+			FieldType:  FieldTypeInt,
+			Length:     2,
+			LengthType: LengthTypeFixed,
+			StopChars:  []uint8{':'},
+			StopType:   StopTypeCharacterExclusive,
+		},
+		&FieldInfo{
+			Name:       "Seconds",
+			FieldType:  FieldTypeInt,
+			Length:     2,
+			LengthType: LengthTypeFixed,
+			StopChars:  []uint8{'.'},
+			StopType:   StopTypeCharacterExclusive,
+		},
+		&FieldInfo{
+			Name:       "Nanos",
+			FieldType:  FieldTypeString,
+			Length:     9,
+			LengthType: LengthTypeMax,
+			StopChars:  DefaultStopChars,
+		},
+		&FieldInfo{
+			Name:      "Pid",
+			FieldType: FieldTypeInt32,
+			StopChars: DefaultStopChars,
+		},
+		&FieldInfo{
+			Name:      "Tid",
+			FieldType: FieldTypeInt32,
+			StopChars: DefaultStopChars,
+		},
+		&FieldInfo{
+			Name:       "Level",
+			FieldType:  FieldTypeString,
+			Length:     1,
+			LengthType: LengthTypeFixed,
+			StopChars:  DefaultStopChars,
+		},
+		&FieldInfo{
+			Name:      "Tag",
+			FieldType: FieldTypeString,
+			StopChars: DefaultStopChars,
+		},
+		&FieldInfo{
+			Name:      "Payload",
+			FieldType: FieldTypeRemainder,
+			StopChars: DefaultStopChars,
+		},
 	}
 }
