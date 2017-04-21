@@ -101,8 +101,8 @@ func (p *LogcatParser) Regex() []*regexp.Regexp {
 	return p.Patterns
 }
 
-var ConfigDoNewParse = true
-var ConfigDoNewNewParse = false
+var ConfigDoNewParse = false
+var ConfigDoNewNewParse = true
 
 func (p *LogcatParser) Parse(line string) (*Logline, error) {
 

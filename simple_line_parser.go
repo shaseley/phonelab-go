@@ -243,15 +243,15 @@ func (p *lineParserImpl) parseField(info *FieldInfo, dest interface{}) error {
 	// Skip leading space and check if we've run off the edge
 	p.advance()
 
-	if p.pos >= p.length {
-		return fmt.Errorf("Parser Error: Expected field '%v', got EOF", info.Name)
-	}
-
 	if info.FieldType == FieldTypeRemainder {
 		// We're done.
 		//f.Set(p.line[p.pos:])
 		*(dest.(*string)) = p.line[p.pos:]
 		return nil
+	}
+
+	if p.pos >= p.length {
+		return fmt.Errorf("Parser Error: Expected field '%v', got EOF", info.Name)
 	}
 
 	start := p.pos
