@@ -6,12 +6,11 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 
-	"github.com/bmatcuk/doublestar"
 	"github.com/gurupras/go-daterange"
 	"github.com/gurupras/go-easyfiles"
-	"github.com/gurupras/go-hdfs-doublestar"
-	"github.com/shaseley/phonelab-go/hdfs"
+	"github.com/gurupras/go-easyfiles/easyhdfs"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -23,11 +22,11 @@ type PhonelabSourceProcessor struct {
 
 type PhonelabSourceInfo struct {
 	*StitchInfo
-	Path      string
-	DeviceId  string
-	BootId    string
-	HdfsAddr  string
-	DateRange *daterange.DateRange
+	Path        string
+	DeviceId    string
+	BootId      string
+	FSInterface easyfiles.FileSystemInterface
+	DateRange   *daterange.DateRange
 }
 
 func (info *PhonelabSourceInfo) Type() string {
@@ -42,20 +41,10 @@ func NewPhonelabSourceProcessor(sourceInfo *PhonelabSourceInfo, errHandler ErrHa
 	path := sourceInfo.Path
 	device := sourceInfo.DeviceId
 	bootId := sourceInfo.BootId
-	hdfsAddr := sourceInfo.HdfsAddr
 
 	bootPath := filepath.Join(path, device, bootId)
 
-	client, err := hdfs.NewHDFSClient(hdfsAddr)
-	if err != nil {
-		return nil, err
-	}
-	var bootFiles []string
-	if client != nil {
-		bootFiles, err = hdfs_doublestar.Glob(client.Client, filepath.Join(bootPath, "*.gz"))
-	} else {
-		bootFiles, err = doublestar.Glob(filepath.Join(bootPath, "*.gz"))
-	}
+	bootFiles, err := sourceInfo.FSInterface.Glob(filepath.Join(bootPath, "*.gz"))
 	if err != nil {
 		return nil, err
 	}
@@ -65,11 +54,6 @@ func NewPhonelabSourceProcessor(sourceInfo *PhonelabSourceInfo, errHandler ErrHa
 
 func (psp *PhonelabSourceProcessor) Process() <-chan interface{} {
 	outChan := make(chan interface{})
-
-	client, err := hdfs.NewHDFSClient(psp.HdfsAddr)
-	if err != nil {
-		panic(fmt.Sprintf("Unable to connect to HDFS namenode at '%v': %v", psp.HdfsAddr, err))
-	}
 
 	go func() {
 		var startIdx int = 0
@@ -99,7 +83,7 @@ func (psp *PhonelabSourceProcessor) Process() <-chan interface{} {
 		log.Debugf("%v->%v range=%v-%v", psp.DeviceId, psp.BootId, startIdx, endIdx)
 
 		for _, bootFile := range psp.bootFiles[startIdx:endIdx] {
-			file, err := hdfs.OpenFile(bootFile, os.O_RDONLY, easyfiles.GZ_TRUE, client)
+			file, err := psp.PhonelabSourceInfo.FSInterface.Open(bootFile, os.O_RDONLY, easyfiles.GZ_TRUE)
 			if err != nil {
 				if psp.ErrHandler != nil {
 					psp.ErrHandler(err)
@@ -145,6 +129,15 @@ func (psg *PhonelabSourceGenerator) Process() <-chan *PipelineSourceInstance {
 		hdfsAddr = v.(string)
 	}
 
+	// Initialize FS
+	var fs easyfiles.FileSystemInterface
+	if strings.Compare(hdfsAddr, "") == 0 {
+		// No HDFS address. Local FS
+		fs = easyfiles.LocalFS
+	} else {
+		fs = easyhdfs.NewHDFSFileSystem(hdfsAddr)
+	}
+
 	// Parse date range
 	var dateRange *daterange.DateRange
 	if v, ok := psg.Args["daterange"]; ok {
@@ -154,18 +147,13 @@ func (psg *PhonelabSourceGenerator) Process() <-chan *PipelineSourceInstance {
 		}
 	}
 
-	client, err := hdfs.NewHDFSClient(hdfsAddr)
-	if err != nil {
-		panic(fmt.Sprintf("Unable to connect to HDFS namenode at '%v': %v", hdfsAddr, err))
-	}
-
 	log.Debugf("Paths: %v", psg.devicePaths)
 
 	go func() {
 		for device, basePaths := range psg.devicePaths {
 			for _, basePath := range basePaths {
 				infoJsonPath := filepath.Join(basePath, device, "info.json")
-				if data, err := hdfs.ReadFile(infoJsonPath, client); err != nil {
+				if data, err := fs.ReadFile(infoJsonPath); err != nil {
 					if psg.ErrHandler != nil {
 						psg.ErrHandler(err)
 					} else {
@@ -183,12 +171,12 @@ func (psg *PhonelabSourceGenerator) Process() <-chan *PipelineSourceInstance {
 					bootids := info.BootIds()
 					for _, bootid := range bootids {
 						sourceInfo := &PhonelabSourceInfo{
-							DeviceId:   device,
-							BootId:     bootid,
-							Path:       basePath,
-							HdfsAddr:   hdfsAddr,
-							DateRange:  dateRange,
-							StitchInfo: info,
+							DeviceId:    device,
+							BootId:      bootid,
+							Path:        basePath,
+							DateRange:   dateRange,
+							FSInterface: fs,
+							StitchInfo:  info,
 						}
 
 						psp, err := NewPhonelabSourceProcessor(sourceInfo, psg.ErrHandler)

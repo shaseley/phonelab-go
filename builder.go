@@ -9,10 +9,9 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/bmatcuk/doublestar"
-	"github.com/gurupras/go-hdfs-doublestar"
+	"github.com/gurupras/go-easyfiles"
+	"github.com/gurupras/go-easyfiles/easyhdfs"
 	"github.com/shaseley/depgraph"
-	"github.com/shaseley/phonelab-go/hdfs"
 	log "github.com/sirupsen/logrus"
 	yaml "gopkg.in/yaml.v2"
 )
@@ -39,8 +38,9 @@ type RunnerConf struct {
 type PipelineSourceType string
 
 const (
-	PipelineSourceFile     PipelineSourceType = "files"
-	PipelineSourcePhonelab                    = "phonelab"
+	PipelineSourceFile        PipelineSourceType = "files"
+	PipelineSourcePhonelab                       = "phonelab"
+	PipelineSourcePhonelabRaw                    = "phonelab-raw"
 )
 
 type PipelineSourceConf struct {
@@ -92,6 +92,7 @@ type ProcessorConf struct {
 	// Pipleine config
 	Inputs        []*ProcessorInputConf `yaml:"inputs"`        // A list of dependencies, i.e. input sources
 	HasLogstream  bool                  `yaml:"has_logstream"` // Whether or not it requires parsed loglines
+	RawStrings    bool                  `yaml:"raw_strings"`   // Whether to pass on the raw lines
 	Filters       []*FilterConf         `yaml:"filters"`       // Filters to apply to log strings
 	Preprocessors []*ProcessorInputConf `yaml:"preprocessors"` // A list of preprocessor node names
 	Parsers       []string              `yaml:"parsers"`       // A list of parsers to use
@@ -191,6 +192,12 @@ func (conf *PipelineSourceConf) Expand() ([]string, error) {
 	if v, ok := conf.Args["hdfs_addr"]; ok {
 		hdfsAddr = v.(string)
 	}
+	var fs easyfiles.FileSystemInterface
+	if strings.Compare(hdfsAddr, "") == 0 {
+		fs = easyfiles.LocalFS
+	} else {
+		fs = easyhdfs.NewHDFSFileSystem(hdfsAddr)
+	}
 
 	switch conf.Type {
 	default:
@@ -202,25 +209,25 @@ func (conf *PipelineSourceConf) Expand() ([]string, error) {
 			if len(source) == 0 {
 				return nil, fmt.Errorf("Invalid source file: empty name")
 			}
-			client, err := hdfs.NewHDFSClient(hdfsAddr)
-			if err != nil {
-				return nil, fmt.Errorf("Failed to connect to HDFS name node: %v", err)
-			}
-			if client != nil {
-				log.Infof("Connected to hdfs at address: %v", hdfsAddr)
-			}
 
-			var files []string
-			if client != nil {
-				// We're in HDFS mode
-				files, err = hdfs_doublestar.Glob(client.Client, source)
-				log.Infof("HDFS glob result: %v", files)
-			} else {
-				files, err = doublestar.Glob(source)
-			}
+			files, err := fs.Glob(source)
 			if err != nil {
 				return nil, fmt.Errorf("Error globbing files: %v", err)
 			} else {
+				log.Debugf("glob result: %v", files)
+				allFiles = append(allFiles, files...)
+			}
+		}
+	case PipelineSourcePhonelabRaw:
+		for _, source := range conf.Sources {
+			if len(source) == 0 {
+				return nil, fmt.Errorf("Invalid source file: empty name")
+			}
+			files, err := fs.Glob(source)
+			if err != nil {
+				return nil, fmt.Errorf("Error globbing files: %v", err)
+			} else {
+				log.Infof("HDFS glob result: %v", files)
 				allFiles = append(allFiles, files...)
 			}
 		}
@@ -246,7 +253,7 @@ func (conf *PipelineSourceConf) ToPipelineSourceGenerator() (PipelineSourceGener
 		return nil, errors.New("No files resolved from sources")
 	}
 
-	log.Infof("conf.Args=%v", conf.Args)
+	log.Debugf("conf.Args=%v", conf.Args)
 
 	switch conf.Type {
 	case PipelineSourceFile:
@@ -269,11 +276,27 @@ func (conf *PipelineSourceConf) ToPipelineSourceGenerator() (PipelineSourceGener
 			devicePaths[device] = append(devicePaths[device], basePath)
 		}
 		return NewPhonelabSourceGenerator(devicePaths, conf.Args, errHandler), nil
-		errHandler := func(err error) {
-			panic(err)
+	case PipelineSourcePhonelabRaw:
+		// Each 'source' is finding a 'time' directory. Given this
+		// assumption, the deviec is the parent directory to each
+		// 'time' directory
+		log.Infof("PhonelabRaw source")
+		log.Infof("Paths=%v", expanded)
+		devicePaths := make(map[string]string)
+		for _, file := range expanded {
+			parent, err := filepath.Abs(filepath.Dir(file))
+			if err != nil {
+				return nil, fmt.Errorf("Failed to find absolute path: %v", err)
+			}
+			device := filepath.Base(parent)
+			basePath := filepath.Dir(parent)
+			if _, ok := devicePaths[device]; !ok {
+				devicePaths[device] = basePath
+			} else {
+				panic(fmt.Sprintf("Multiple paths for single device: %v \n\t%s\n\t%s\n", device, devicePaths[device], basePath))
+			}
 		}
-
-		return NewTextFileSourceGenerator(expanded, errHandler), nil
+		return NewPhonelabRawGenerator(devicePaths, conf.Args, errHandler), nil
 	}
 	return nil, errors.New("Invalid type specification: " + string(conf.Type))
 }
@@ -416,7 +439,9 @@ func (conf *ProcessorConf) buildLoglineSource(env *Environment, source Processor
 	}
 
 	// We'll have at least one parser for loglines
-	source = conf.buildParserProc(env, source)
+	if !conf.RawStrings {
+		source = conf.buildParserProc(env, source)
+	}
 
 	// Add on any preprocessors
 	for _, proc := range conf.Preprocessors {

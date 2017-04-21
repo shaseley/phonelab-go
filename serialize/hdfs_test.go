@@ -11,7 +11,7 @@ import (
 	"testing"
 
 	"github.com/gurupras/go-easyfiles"
-	"github.com/shaseley/phonelab-go/hdfs"
+	"github.com/gurupras/go-easyfiles/easyhdfs"
 	"github.com/stretchr/testify/require"
 )
 
@@ -25,11 +25,9 @@ func TestHDFSSerialize(t *testing.T) {
 		t.Skip(fmt.Sprintf("HDFS address not specified"))
 	}
 
-	require := require.New(t)
+	fs := easyhdfs.NewHDFSFileSystem(*hdfsAddr)
 
-	client, err := hdfs.NewHDFSClient(*hdfsAddr)
-	require.Nil(err)
-	require.NotNil(client)
+	require := require.New(t)
 
 	// Add an extra directory just to test mkdirAll
 	outdir := filepath.Join(*hdfsPath, "test-hdfs-serialize")
@@ -38,12 +36,12 @@ func TestHDFSSerialize(t *testing.T) {
 	data := []string{"Hello", "World"}
 
 	serializer := &HDFSSerializer{*hdfsAddr}
-	err = serializer.Serialize(data, filePath)
+	err := serializer.Serialize(data, filePath)
 	require.Nil(err)
-	defer client.Remove(outdir)
+	defer fs.Remove(outdir)
 
 	// Now check the data
-	f, err := hdfs.OpenFile(filePath, os.O_RDONLY, easyfiles.GZ_TRUE, client)
+	f, err := fs.Open(filePath, os.O_RDONLY, easyfiles.GZ_TRUE)
 	require.Nil(err)
 	reader, err := f.RawReader()
 	require.Nil(err)
