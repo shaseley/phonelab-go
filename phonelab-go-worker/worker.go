@@ -47,25 +47,20 @@ func NewPhoneLabWorkerManager() *PhoneLabWorkerManager {
 
 // An individual worker thread.
 type PhoneLabWorker struct {
-	Id int
-
+	Id      int
+	mgr     *PhoneLabWorkerManager
 	server  string
 	conn    *beanstalk.Conn
 	tempDir string
 }
 
-func NewPhoneLabWorker(mgr *PhoneLabWorkerManager, id int) (*PhoneLabWorker, error) {
-	c, err := beanstalk.Dial("tcp", fmt.Sprintf("%v:%v", mgr.BeanstalkServer, mgr.BeanstalkPort))
-	if err != nil {
-		return nil, fmt.Errorf("Unable to connect to beanstalk: %v", err)
-	}
-
+func NewPhoneLabWorker(mgr *PhoneLabWorkerManager, id int) *PhoneLabWorker {
 	return &PhoneLabWorker{
 		Id:      id,
-		conn:    c,
 		server:  fmt.Sprintf("%v:%v", mgr.Server, mgr.Port),
 		tempDir: mgr.tempDir,
-	}, nil
+		mgr:     mgr,
+	}
 }
 
 type BeanstalkJob struct {
@@ -97,6 +92,37 @@ func workerCmdRun(cmd *cobra.Command, args []string) {
 	workerManager.Start()
 }
 
+const (
+	beanstalkConnectSleepS = 10
+	beanstalkMaxRetries    = -1
+)
+
+func (w *PhoneLabWorker) connectToBeanstalk() error {
+	attempt := 0
+
+	for beanstalkMaxRetries < 0 || attempt < beanstalkMaxRetries {
+		if w.conn != nil {
+			// This will probably error, but just in case the connection is in a weird state
+			w.conn.Close()
+		}
+
+		attempt += 1
+		logger.Printf("Worker %v connecting to beanstalk...\n", w.Id)
+
+		c, err := beanstalk.Dial("tcp", fmt.Sprintf("%v:%v", w.mgr.BeanstalkServer, w.mgr.BeanstalkPort))
+		if err != nil {
+			logger.Printf("Worker %v unable to connect to beanstalk: %v. Trying again in %v sec.\n", w.Id, err, beanstalkConnectSleepS)
+		} else {
+			logger.Printf("Worker %v connected to beanstalk\n", w.Id)
+			w.conn = c
+			return nil
+		}
+		time.Sleep(beanstalkConnectSleepS * time.Second)
+	}
+
+	return errors.New("Timed out connecting to beanstalk")
+}
+
 // Kick off the worker
 func (w *PhoneLabWorkerManager) Start() {
 
@@ -116,17 +142,18 @@ func (mgr *PhoneLabWorkerManager) mainLoop() {
 
 	workers := make([]*PhoneLabWorker, 0, mgr.MaxJobs)
 	for i := 0; i < mgr.MaxJobs; i++ {
-		w, err := NewPhoneLabWorker(mgr, i+1)
-		if err != nil {
-			panic(err)
-		}
-		workers = append(workers, w)
+		workers = append(workers, NewPhoneLabWorker(mgr, i+1))
 	}
 
 	done := make(chan int)
 
 	for _, w := range workers {
 		go func(worker *PhoneLabWorker) {
+			if err := worker.connectToBeanstalk(); err != nil {
+				// Timeout
+				panic(err)
+			}
+
 			for {
 				if err := worker.runOneJob(); err != nil {
 					logger.Printf("Error running job: %v\n", err)
@@ -154,8 +181,12 @@ func (w *PhoneLabWorker) runOneJob() error {
 		// Get all tubes
 		tubes, err := w.conn.ListTubes()
 		if err != nil {
-			logger.Fatalf("Error listing tubes: '%v'. Shutting down.\n", err)
-			return err
+			logger.Printf("Error listing tubes: '%v'. Reconnecting...\n", err)
+			if err = w.connectToBeanstalk(); err != nil {
+				return err
+			}
+			// The connection has been re-established, start the loop again
+			continue
 		}
 
 		// Get a job from beanstalk from one of the tubes
