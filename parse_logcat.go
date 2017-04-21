@@ -101,15 +101,15 @@ func (p *LogcatParser) Regex() []*regexp.Regexp {
 	return p.Patterns
 }
 
-var ConfigDoNewParse = false
-var ConfigDoNewNewParse = true
+var ConfigDoNewParse = true
+var ConfigDoNewNewParse = false
 
 func (p *LogcatParser) Parse(line string) (*Logline, error) {
 
-	if ConfigDoNewNewParse {
-		return p.fieldParser.Parse(line)
-	} else if ConfigDoNewParse {
+	if ConfigDoNewParse {
 		return parseLoglineString(line)
+	} else if ConfigDoNewNewParse {
+		return p.fieldParser.Parse(line)
 	}
 
 	p.l.Lock()
@@ -575,18 +575,8 @@ type logcatFieldParser struct {
 }
 
 func newLogcatFieldParser() *logcatFieldParser {
-	sz := len(phoneLabLogLineFields)
-	if len(traceLogLineFields) > sz {
-		sz = len(traceLogLineFields)
-	}
-
-	// FIXME: Hack to get around init order on tests.
-	if sz == 0 {
-		sz = 20
-	}
-
 	return &logcatFieldParser{
-		addrs:       make([]interface{}, sz, sz),
+		addrs:       make([]interface{}, numLineParserAddrs, numLineParserAddrs),
 		fieldParser: newLineParserImpl(nil, ""),
 		temp:        &intermediateLine{},
 	}
@@ -714,6 +704,10 @@ func (p *logcatFieldParser) parseLoglinePhoneLabFmt(line string) (*Logline, erro
 var (
 	traceLogLineFields    []*FieldInfo
 	phoneLabLogLineFields []*FieldInfo
+)
+
+const (
+	numLineParserAddrs = 18
 )
 
 func initLocatFieldInfo() {
