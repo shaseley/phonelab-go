@@ -198,7 +198,7 @@ func (s *SubmissionServer) QueueJob(job *metaJob) (int, error) {
 
 		if bytes, err := json.Marshal(newJob); err != nil {
 			return http.StatusInternalServerError, fmt.Errorf("Json Marshal Error: %v", err)
-		} else if _, err = tube.Put(bytes, 1, 0, time.Second*60*60); err != nil {
+		} else if _, err = tube.Put(bytes, 1, 0, time.Second*60*60*8); err != nil {
 			return http.StatusInternalServerError, fmt.Errorf("Beanstalk Queue Error: %v", err)
 		}
 	}
