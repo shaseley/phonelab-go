@@ -22,7 +22,7 @@ func TestLocalSerialize(t *testing.T) {
 	filename := "test-local-serializer.gz"
 	filePath := filepath.Join(outdir, filename)
 
-	err := serializer.Serialize(data, filePath)
+	err := serializer.Serialize(data, "file://"+filePath)
 	require.Nil(err)
 	defer os.RemoveAll(outdir)
 

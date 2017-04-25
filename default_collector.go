@@ -3,10 +3,12 @@ package phonelab
 import (
 	"errors"
 	"fmt"
+	"net/url"
 	"path"
 	"strings"
 
 	"github.com/shaseley/phonelab-go/serialize"
+	log "github.com/sirupsen/logrus"
 )
 
 // DefaultCollector is a DataCollector that passes data to a configured
@@ -39,14 +41,6 @@ func NewDefaultCollector(args map[string]interface{}) (DataCollector, error) {
 		return nil, errors.New("Missing 'path' argument. A path is required for the default collector")
 	}
 
-	// HDFS path (required for hdfs://)
-	hdfsAddr := ""
-	if v, ok := args["hdfs_addr"]; ok {
-		if hdfsAddr, ok = v.(string); !ok {
-			return nil, fmt.Errorf("Unexpected type for 'hdfs_addr'. Expected string, got %t", v)
-		}
-	}
-
 	compressed := false
 
 	for _, s := range []string{"compress", "compressed"} {
@@ -64,23 +58,9 @@ func NewDefaultCollector(args map[string]interface{}) (DataCollector, error) {
 		}
 	}
 
-	var serializer serialize.Serializer
-
-	if strings.HasPrefix(pathOrUrl, "http://") || strings.HasPrefix(pathOrUrl, "https://") {
-		serializer = &serialize.HTTPSerializer{}
-	} else if strings.HasPrefix(pathOrUrl, "hdfs://") {
-		if len(hdfsAddr) == 0 {
-			return nil, errors.New("Missing 'hdfs_addr' argument. An HDFS address is required hdfs://")
-		}
-		serializer = serialize.NewHDFSSerializer(hdfsAddr)
-	} else {
-		if strings.HasPrefix(pathOrUrl, "file://") {
-			pathOrUrl = pathOrUrl[7:]
-		}
-		if len(pathOrUrl) == 0 {
-			return nil, errors.New("Invalid path")
-		}
-		serializer = &serialize.LocalSerializer{}
+	serializer, err := serialize.DetectSerializer(pathOrUrl)
+	if err != nil {
+		return nil, err
 	}
 
 	return &DefaultCollector{
@@ -97,7 +77,11 @@ func (dc *DefaultCollector) makeOutPath(context string) string {
 
 	context = strings.Replace(context, "/", "_", -1)
 
-	outPath := path.Join(dc.Path, context)
+	log.Debugf("dc.Path=%v\n", dc.Path)
+
+	u, _ := url.Parse(dc.Path)
+	u.Path = path.Join(u.Path, context)
+	outPath := u.String()
 
 	// Tack on the file type
 	if dc.Compressed {
@@ -106,6 +90,7 @@ func (dc *DefaultCollector) makeOutPath(context string) string {
 		outPath += ".json"
 	}
 
+	log.Debugf("outPath=%v\n", outPath)
 	return outPath
 }
 

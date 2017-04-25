@@ -7,14 +7,20 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"time"
 
 	"github.com/gorilla/mux"
 	"github.com/gurupras/go-easyfiles"
+	"github.com/gurupras/go-stoppable-net-listener"
 	"github.com/parnurzeal/gorequest"
 	log "github.com/sirupsen/logrus"
 )
 
 type HTTPSerializer struct {
+}
+
+func (h *HTTPSerializer) OutPath(path string) (string, error) {
+	return path, nil
 }
 
 func (h *HTTPSerializer) Serialize(obj interface{}, url string) error {
@@ -81,4 +87,22 @@ func (h *HTTPReceiver) Handle(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte("OK"))
+}
+
+func (h *HTTPReceiver) RunHTTPReceiver(port int) error {
+	r := mux.NewRouter()
+	r.HandleFunc("/upload/{relpath:[\\S+/]+}", h.Handle)
+	http.Handle("/", r)
+
+	snl, err := stoppablenetlistener.New(41121)
+	if err != nil {
+		return err
+	}
+	snl.Timeout = 100 * time.Millisecond
+
+	go func() {
+		server := http.Server{}
+		server.Serve(snl)
+	}()
+	return nil
 }

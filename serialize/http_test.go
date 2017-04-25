@@ -2,16 +2,12 @@ package serialize
 
 import (
 	"encoding/json"
-	"net/http"
 	"os"
 	"reflect"
-	"sync"
 	"testing"
 	"time"
 
-	"github.com/gorilla/mux"
 	"github.com/gurupras/go-easyfiles"
-	"github.com/gurupras/go-stoppable-net-listener"
 	"github.com/stretchr/testify/require"
 )
 
@@ -20,21 +16,7 @@ func TestHTTPSerialize(t *testing.T) {
 
 	httpReceiver := NewHTTPReceiver("test")
 
-	r := mux.NewRouter()
-	r.HandleFunc("/upload/{relpath:[\\S+/]+}", httpReceiver.Handle)
-	http.Handle("/", r)
-
-	wg := sync.WaitGroup{}
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		server := http.Server{}
-		snl, err := stoppablenetlistener.New(41121)
-		require.Nil(err)
-		snl.Timeout = 100 * time.Millisecond
-		server.Serve(snl)
-	}()
-
+	go httpReceiver.RunHTTPReceiver(41121)
 	time.Sleep(100 * time.Millisecond)
 
 	// Now upload some data

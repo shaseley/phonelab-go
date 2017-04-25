@@ -50,7 +50,7 @@ func TestBuildeDefaultrDataCollector(t *testing.T) {
 data_collector:
   name: "default"
   args:
-    path: "./test/default_collector_test"
+    path: "file://test/default_collector_test"
     aggregate: true
     compress: true
 source:
