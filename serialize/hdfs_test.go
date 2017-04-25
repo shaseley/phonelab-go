@@ -12,12 +12,12 @@ import (
 
 	"github.com/gurupras/go-easyfiles"
 	"github.com/gurupras/go-easyfiles/easyhdfs"
+	log "github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/require"
 )
 
 var (
 	hdfsAddr = flag.String("hdfs-addr", "", "Address of HDFS server")
-	hdfsPath = flag.String("hdfs-path", "/test", "Base path under which serialization is tested")
 )
 
 func TestHDFSSerialize(t *testing.T) {
@@ -25,23 +25,38 @@ func TestHDFSSerialize(t *testing.T) {
 		t.Skip(fmt.Sprintf("HDFS address not specified"))
 	}
 
-	fs := easyhdfs.NewHDFSFileSystem(*hdfsAddr)
+	addr := parseHDFSAddr(*hdfsAddr)
+	log.Debugf("addr=%v\n", addr)
+	fs := easyhdfs.NewHDFSFileSystem(addr)
 
 	require := require.New(t)
 
 	// Add an extra directory just to test mkdirAll
-	outdir := filepath.Join(*hdfsPath, "test-hdfs-serialize")
+	sanitizedPath := *hdfsAddr
+	sanitizedPath = sanitizedPath[strings.Index(sanitizedPath, addr)+len(addr):]
+	log.Debugf("sanitizedPath=%v\n", sanitizedPath)
+	outdir := filepath.Join(sanitizedPath, "test-hdfs-serialize")
+	if exists, _ := fs.Exists(outdir); exists {
+		err := fs.RemoveAll(outdir)
+		require.Nil(err)
+	}
 	filePath := filepath.Join(outdir, "test-serialize.gz")
 
 	data := []string{"Hello", "World"}
 
-	serializer := &HDFSSerializer{*hdfsAddr}
-	err := serializer.Serialize(data, filePath)
+	serializer := NewHDFSSerializer(*hdfsAddr)
+	serializePath := fmt.Sprintf("hdfs://%v%v", addr, filePath)
+	log.Debugf("serializePath=%v\n", serializePath)
+	err := serializer.Serialize(data, serializePath)
 	require.Nil(err)
 	defer fs.Remove(outdir)
 
 	// Now check the data
-	f, err := fs.Open(filePath, os.O_RDONLY, easyfiles.GZ_TRUE)
+	// Sanitize filePath since it contains hdfs://hdfsAddr/
+	outPath, err := serializer.OutPath(serializePath)
+	require.Nil(err)
+
+	f, err := fs.Open(outPath, os.O_RDONLY, easyfiles.GZ_TRUE)
 	require.Nil(err)
 	reader, err := f.RawReader()
 	require.Nil(err)
@@ -59,7 +74,7 @@ func TestHDFSSerializerBadArgs(t *testing.T) {
 
 	require := require.New(t)
 
-	serializer := &HDFSSerializer{*hdfsAddr}
+	serializer := NewHDFSSerializer(*hdfsAddr)
 
 	err := serializer.Serialize(nil, "")
 	require.NotNil(err)
