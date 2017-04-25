@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"reflect"
 	"regexp"
-	"strings"
 )
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -349,70 +348,4 @@ func (s *PeriodicCtxSwitchMarkerParser) New() interface{} {
 
 func (s *PeriodicCtxSwitchMarkerParser) Regex() *regexp.Regexp {
 	return PHONELAB_PERIODIC_CTX_SWITCH_MARKER_PATTERN
-}
-
-///////////////////////////////////////////////////////////////////////////////
-// TODO: Should this move?
-
-type PeriodicCtxSwitchInfo struct {
-	Start *PhonelabPeriodicCtxSwitchMarker
-	Info  []*PhonelabPeriodicCtxSwitchInfo
-	End   *PhonelabPeriodicCtxSwitchMarker
-}
-
-func (pcsi *PeriodicCtxSwitchInfo) TotalTime() int64 {
-	total_time := int64(0)
-	for _, info := range pcsi.Info {
-		total_time += info.Rtime
-	}
-	return total_time
-}
-
-func (pcsi *PeriodicCtxSwitchInfo) Busyness() float64 {
-	total_time := pcsi.TotalTime()
-	busy_time := int64(0)
-
-	if total_time == 0 {
-		return 0.0
-	}
-
-	for _, info := range pcsi.Info {
-		if !strings.Contains(info.Comm, "swapper") {
-			busy_time += info.Rtime
-		}
-	}
-	return float64(busy_time) / float64(total_time)
-}
-
-func (pcsi *PeriodicCtxSwitchInfo) FgBusyness() float64 {
-	total_time := pcsi.TotalTime()
-	busy_time := int64(0)
-
-	if total_time == 0 {
-		return 0.0
-	}
-
-	for _, info := range pcsi.Info {
-		if !strings.Contains(info.Comm, "swapper") {
-			busy_time += info.Rtime
-			busy_time -= info.BgRtime
-		}
-	}
-	return float64(busy_time) / float64(total_time)
-}
-
-func (pcsi *PeriodicCtxSwitchInfo) BgBusyness() float64 {
-	total_time := pcsi.TotalTime()
-	busy_time := int64(0)
-
-	if total_time == 0 {
-		return 0.0
-	}
-
-	for _, info := range pcsi.Info {
-		if !strings.Contains(info.Comm, "swapper") {
-			busy_time += info.BgRtime
-		}
-	}
-	return float64(busy_time) / float64(total_time)
 }
