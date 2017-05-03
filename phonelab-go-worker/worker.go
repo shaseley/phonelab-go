@@ -5,17 +5,19 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/kr/beanstalk"
-	"github.com/parnurzeal/gorequest"
-	"github.com/spf13/cobra"
 	"io/ioutil"
 	"log"
+	"math/rand"
 	"net/http"
 	"os"
 	"os/exec"
 	"path"
 	"sync"
 	"time"
+
+	"github.com/kr/beanstalk"
+	"github.com/parnurzeal/gorequest"
+	"github.com/spf13/cobra"
 )
 
 var logger = log.New(os.Stderr, "phonelab-go-worker", log.LstdFlags)
@@ -177,12 +179,20 @@ func (w *PhoneLabWorker) runOneJob() error {
 	// We keep the timeout relatively short and poll for tube changes.
 	// This would be far better if beanstalk allowed us to reserve a job on
 	// any tube.
+
+	// FIXME: Ideally, one goroutine would poll for jobs which would allow
+	// the easy addition of latency to try and ensure that different
+	// clients pick up jobs without saturating one client. Instead, this
+	// tries to achieve the same thing with least code change
+	w.mgr.Lock()
+	time.Sleep(time.Duration((1 + rand.Int31n(5))) * time.Second)
 	for {
 		// Get all tubes
 		tubes, err := w.conn.ListTubes()
 		if err != nil {
 			logger.Printf("Error listing tubes: '%v'. Reconnecting...\n", err)
 			if err = w.connectToBeanstalk(); err != nil {
+				w.mgr.Unlock()
 				return err
 			}
 			// The connection has been re-established, start the loop again
@@ -200,6 +210,7 @@ func (w *PhoneLabWorker) runOneJob() error {
 		}
 		break
 	}
+	w.mgr.Unlock()
 
 	logger.Printf("Worker %v starting job %v...\n", id, bid)
 
