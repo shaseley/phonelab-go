@@ -2,10 +2,14 @@ package phonelab
 
 import (
 	"fmt"
+	"path"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/fatih/set"
+	"github.com/gurupras/go-daterange"
 	"github.com/gurupras/go-easyfiles"
 	"github.com/gurupras/go-easyfiles/easyhdfs"
 	log "github.com/sirupsen/logrus"
@@ -24,6 +28,7 @@ type PhonelabRawInfo struct {
 	ProcessedPath string
 	DeviceId      string
 	HdfsAddr      string
+	DateRange     *daterange.DateRange
 }
 
 func (info *PhonelabRawInfo) Type() string {
@@ -41,10 +46,39 @@ func NewPhonelabRawProcessor(sourceInfo *PhonelabRawInfo, files []string, errHan
 func (prp *PhonelabRawProcessor) Process() <-chan interface{} {
 	outChan := make(chan interface{})
 
-	log.Infof("Files: %v", prp.Files)
+	var filteredFiles []string
+	if prp.PhonelabRawInfo.DateRange != nil {
+		dateRange := prp.PhonelabRawInfo.DateRange
+		// Files are in the format time/YYYY/mm/dd.out.gz
+		filteredFiles = make([]string, 0)
+		for _, file := range prp.Files {
+			tmp := path.Base(file)[:2]
+			day, err := strconv.Atoi(tmp)
+			if err != nil {
+				panic(fmt.Sprintf("Failed to convert '%v' to int", tmp))
+			}
+			tmp = path.Base(path.Dir(file))
+			month, err := strconv.Atoi(tmp)
+			if err != nil {
+				panic(fmt.Sprintf("Failed to convert '%v' to int", tmp))
+			}
+			tmp = path.Base(path.Dir(path.Dir(file)))
+			year, err := strconv.Atoi(tmp)
+			if err != nil {
+				panic(fmt.Sprintf("Failed to convert '%v' to int", tmp))
+			}
+			date := time.Date(year, time.Month(month), day, 0, 0, 0, 0, time.UTC)
+			if dateRange.ContainsDate(date) {
+				filteredFiles = append(filteredFiles, file)
+			}
+		}
+	} else {
+		filteredFiles = prp.Files
+	}
+	log.Infof("Files: %v", filteredFiles)
 
 	go func() {
-		for _, f := range prp.Files {
+		for _, f := range filteredFiles {
 			outChan <- f
 		}
 		close(outChan)
@@ -77,6 +111,15 @@ func (prg *PhonelabRawGenerator) Process() <-chan *PipelineSourceInstance {
 		fs = easyfiles.LocalFS
 	} else {
 		fs = easyhdfs.NewHDFSFileSystem(hdfsAddr)
+	}
+
+	// Parse date range
+	var dateRange *daterange.DateRange
+	if v, ok := prg.Args["daterange"]; ok {
+		var err error
+		if dateRange, err = ParseDateRange(v.(string)); err != nil {
+			panic(fmt.Sprintf("Unable to parse daterange: %v", err))
+		}
 	}
 
 	// Get processed path
@@ -135,6 +178,7 @@ func (prg *PhonelabRawGenerator) Process() <-chan *PipelineSourceInstance {
 				ProcessedPath: processedPath,
 				FSInterface:   fs,
 				StitchInfo:    info,
+				DateRange:     dateRange,
 			}
 
 			prp, err := NewPhonelabRawProcessor(sourceInfo, files, prg.ErrHandler)
