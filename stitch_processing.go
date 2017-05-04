@@ -158,6 +158,87 @@ func (prg *PhonelabRawGenerator) Process() <-chan *PipelineSourceInstance {
 						panic(fmt.Sprintf("Error unmarshaling '%v': %v", infoJsonPath, err))
 					}
 				}
+
+				// Make sure we clear out any files and directories that are not found in info.json
+				// This ensures that any previous run that failed mid-way while adding new files
+				// don't persist since info.json is only updated after everything else has succeeded.
+				// First, remote any extraneous bootIDs
+				log.Infof("Checking for extraneous bootIDs and files...")
+				validBootIds := set.NewNonTS()
+				for _, bootId := range info.BootIds() {
+					validBootIds.Add(bootId)
+				}
+				log.Infof("Valid bootIDs: %v", validBootIds)
+
+				bootIdsFound, err := fs.Glob(filepath.Join(processedPath, device, "*-*-*"))
+				if err != nil {
+					if prg.ErrHandler != nil {
+						prg.ErrHandler(err)
+					} else {
+						panic(fmt.Sprintf("Error globbing bootIds for device '%v': %v", device, err))
+					}
+				}
+				existingBootIds := set.NewNonTS()
+				for _, bootIdPath := range bootIdsFound {
+					bootId := path.Base(bootIdPath)
+					existingBootIds.Add(bootId)
+				}
+				log.Infof("Existing bootIDs: %v", existingBootIds)
+
+				// Get the difference
+				extraneousBootIds := set.Difference(existingBootIds, validBootIds)
+				log.Warnf("Extraneous bootIDs: %v", extraneousBootIds)
+				// Any remaining bootID is extraneous
+				for _, obj := range extraneousBootIds.List() {
+					b := obj.(string)
+					bootIdPath := filepath.Join(processedPath, device, b)
+					log.Warnf("Deleting: %v", bootIdPath)
+					if err := fs.RemoveAll(bootIdPath); err != nil {
+						if prg.ErrHandler != nil {
+							prg.ErrHandler(err)
+						} else {
+							panic(fmt.Sprintf("Failed to remove extraneous bootID '%v': %v", bootIdPath, err))
+						}
+					}
+				}
+
+				// Now, remove any extraneous files within valid bootIDs
+				for bootId, data := range info.BootInfo {
+					bootIdPath := filepath.Join(processedPath, device, bootId)
+					validFiles := set.NewNonTS()
+					existingFiles := set.NewNonTS()
+					for file := range data {
+						validFiles.Add(file)
+					}
+					filesFound, err := fs.Glob(filepath.Join(bootIdPath, "*.gz"))
+					if err != nil {
+						if prg.ErrHandler != nil {
+							prg.ErrHandler(err)
+						} else {
+							panic(fmt.Sprintf("Error globbing bootId files '%v': %v", bootIdPath, err))
+						}
+					}
+					for _, file := range filesFound {
+						// Extract name alone
+						name := path.Base(file)
+						existingFiles.Add(name)
+					}
+					// Now, find the set difference and remove any extraneous files
+					extraneousFiles := set.Difference(existingFiles, validFiles)
+					for _, obj := range extraneousFiles.List() {
+						f := obj.(string)
+						f = filepath.Join(bootIdPath, f)
+						log.Warnf("Deleting: %v", f)
+						if err := fs.Remove(f); err != nil {
+							if prg.ErrHandler != nil {
+								prg.ErrHandler(err)
+							} else {
+								panic(fmt.Sprintf("Failed to remove extraneous bootID file '%v': %v", f, err))
+							}
+						}
+					}
+				}
+
 				processedFiles := set.NewNonTS()
 				for _, obj := range info.Files {
 					processedFiles.Add(obj)
