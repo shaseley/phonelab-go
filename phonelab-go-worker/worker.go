@@ -185,7 +185,7 @@ func (w *PhoneLabWorker) runOneJob() error {
 	// clients pick up jobs without saturating one client. Instead, this
 	// tries to achieve the same thing with least code change
 	w.mgr.Lock()
-	time.Sleep(time.Duration((1 + rand.Int31n(5))) * time.Second)
+	time.Sleep(time.Duration((16 + rand.Int31n(5))) * time.Second)
 	for {
 		// Get all tubes
 		tubes, err := w.conn.ListTubes()
@@ -204,7 +204,7 @@ func (w *PhoneLabWorker) runOneJob() error {
 
 		ts := beanstalk.NewTubeSet(w.conn, tubes...)
 
-		bid, body, err = ts.Reserve(30 * time.Second)
+		bid, body, err = ts.Reserve(15 * time.Second)
 		if err != nil {
 			continue
 		}

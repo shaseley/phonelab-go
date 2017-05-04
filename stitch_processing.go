@@ -187,7 +187,9 @@ func (prg *PhonelabRawGenerator) Process() <-chan *PipelineSourceInstance {
 
 				// Get the difference
 				extraneousBootIds := set.Difference(existingBootIds, validBootIds)
-				log.Warnf("Extraneous bootIDs: %v", extraneousBootIds)
+				if extraneousBootIds.Size() > 0 {
+					log.Warnf("Extraneous bootIDs: %v", extraneousBootIds)
+				}
 				// Any remaining bootID is extraneous
 				for _, obj := range extraneousBootIds.List() {
 					b := obj.(string)
@@ -222,6 +224,9 @@ func (prg *PhonelabRawGenerator) Process() <-chan *PipelineSourceInstance {
 						// Extract name alone
 						name := path.Base(file)
 						existingFiles.Add(name)
+					}
+					if validFiles.Size() != existingFiles.Size() {
+						log.Warnf("Found extraneous files")
 					}
 					// Now, find the set difference and remove any extraneous files
 					extraneousFiles := set.Difference(existingFiles, validFiles)
