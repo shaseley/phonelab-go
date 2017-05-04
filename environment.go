@@ -7,6 +7,18 @@ type ProcessorGen interface {
 	GenerateProcessor(info *PipelineSourceInstance, kwargs map[string]interface{}) Processor
 }
 
+type ProcessorGenFunc func(info *PipelineSourceInstance, kwargs map[string]interface{}) Processor
+
+type ProcessorGenWrapper struct {
+	Gen ProcessorGenFunc
+}
+
+func (g *ProcessorGenWrapper) GenerateProcessor(info *PipelineSourceInstance,
+	kwargs map[string]interface{}) Processor {
+
+	return g.Gen(info, kwargs)
+}
+
 type DataCollectorGen func(kwargs map[string]interface{}) DataCollector
 
 type Environment struct {
