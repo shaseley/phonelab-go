@@ -74,7 +74,7 @@ func (psp *PhonelabSourceProcessor) Process() <-chan interface{} {
 				if startTimestamp < psp.DateRange.Start.Time.UnixNano() {
 					startIdx = idx
 				}
-				if startTimestamp > psp.DateRange.End.Time.UnixNano() {
+				if startTimestamp < psp.DateRange.End.Time.UnixNano() {
 					endIdx = idx
 					break
 				}
