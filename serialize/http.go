@@ -130,6 +130,7 @@ func (h *HTTPReceiver) Handle(w http.ResponseWriter, r *http.Request) {
 	if _, err := io.Copy(buf, r.Body); err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		w.Write([]byte(fmt.Sprintf("Failed to copy body: %v", err)))
+		return
 	}
 
 	w.WriteHeader(http.StatusOK)
