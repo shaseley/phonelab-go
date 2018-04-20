@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/url"
 	"path"
-	"strings"
 
 	"github.com/shaseley/phonelab-go/serialize"
 	log "github.com/sirupsen/logrus"
@@ -75,7 +74,7 @@ func NewDefaultCollector(args map[string]interface{}) (DataCollector, error) {
 func (dc *DefaultCollector) makeOutPath(context string) string {
 	// We start with a base path or URL. Tack on the context.
 
-	context = strings.Replace(context, "/", "_", -1)
+	//context = strings.Replace(context, "/", "_", -1)
 
 	log.Debugf("dc.Path=%v\n", dc.Path)
 
