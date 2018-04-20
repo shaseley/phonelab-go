@@ -1,9 +1,11 @@
 package phonelab
 
 import (
-	"bufio"
 	"fmt"
 	"os"
+	"strings"
+
+	"github.com/gurupras/go-easyfiles"
 )
 
 type TextFileProcessor struct {
@@ -33,7 +35,12 @@ func NewTextFileProcessor(file string, errHandler ErrHandler) *TextFileProcessor
 }
 
 func (p *TextFileProcessor) processFile(outChan chan interface{}) {
-	file, err := os.Open(p.Filename)
+	gz := easyfiles.GZ_FALSE
+	if strings.HasSuffix(p.Filename, ".gz") || strings.HasSuffix(p.Filename, ".tgz") {
+		gz = easyfiles.GZ_TRUE
+	}
+
+	file, err := easyfiles.LocalFS.Open(p.Filename, os.O_RDONLY, gz)
 	if err != nil {
 		if p.ErrHandler != nil {
 			p.ErrHandler(err)
@@ -42,7 +49,14 @@ func (p *TextFileProcessor) processFile(outChan chan interface{}) {
 		}
 	}
 
-	scanner := bufio.NewScanner(file)
+	scanner, err := file.Reader(0)
+	if err != nil {
+		if p.ErrHandler != nil {
+			p.ErrHandler(err)
+		} else {
+			panic(fmt.Sprintf("Failed to get scanner to '%v': %v", p.Filename, err))
+		}
+	}
 
 	for scanner.Scan() {
 		line := scanner.Text()

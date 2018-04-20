@@ -5,22 +5,41 @@ import (
 	"testing"
 )
 
-func TestTextFileProcessor(t *testing.T) {
-	t.Parallel()
+func TextFileProcessorTestCommon(filename string) (int, error) {
+	var err error
 
-	assert := assert.New(t)
-
-	processor := NewTextFileProcessor("./test/test.log", func(e error) {
-		t.Log("Error: ", e)
-		t.FailNow()
+	processor := NewTextFileProcessor(filename, func(e error) {
+		err = e
 	})
 
 	logChan := processor.Process()
 	logs := 0
 	for log := range logChan {
-		assert.True(len(log.(string)) > 0)
-		logs += 1
+		if len(log.(string)) > 0 {
+			logs += 1
+		}
 	}
+
+	return logs, err
+}
+
+func TestTextFileProcessor(t *testing.T) {
+	t.Parallel()
+
+	assert := assert.New(t)
+	logs, err := TextFileProcessorTestCommon("./test/test.log")
+
+	assert.Nil(err)
+	assert.Equal(5000, logs)
+}
+
+func TestTextFileProcessorGZ(t *testing.T) {
+	t.Parallel()
+
+	assert := assert.New(t)
+	logs, err := TextFileProcessorTestCommon("./test/test.log.gz")
+
+	assert.Nil(err)
 	assert.Equal(5000, logs)
 }
 
