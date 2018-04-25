@@ -11,6 +11,8 @@ import (
 type TextFileProcessor struct {
 	Filename string
 	ErrHandler
+	MaxConcurrency int
+	semChannel     chan int
 }
 
 type TextFileSourceInfo struct {
@@ -27,14 +29,23 @@ func (info *TextFileSourceInfo) Context() string {
 
 type ErrHandler func(error)
 
-func NewTextFileProcessor(file string, errHandler ErrHandler) *TextFileProcessor {
+func NewTextFileProcessor(file string, maxConcurrency int, errHandler ErrHandler) *TextFileProcessor {
 	return &TextFileProcessor{
-		Filename:   file,
-		ErrHandler: errHandler,
+		Filename:       file,
+		ErrHandler:     errHandler,
+		MaxConcurrency: maxConcurrency,
+		semChannel:     make(chan int, maxConcurrency),
 	}
 }
 
 func (p *TextFileProcessor) processFile(outChan chan interface{}) {
+	if p.MaxConcurrency > 0 && p.semChannel != nil {
+		p.semChannel <- 1
+		defer func() {
+			<-p.semChannel
+		}()
+	}
+
 	gz := easyfiles.GZ_FALSE
 	if strings.HasSuffix(p.Filename, ".gz") || strings.HasSuffix(p.Filename, ".tgz") {
 		gz = easyfiles.GZ_TRUE
@@ -85,14 +96,16 @@ func (p *TextFileProcessor) Process() <-chan interface{} {
 
 // A source generator that generates one TextFileProcessor for each filename.
 type TextFileSourceGenerator struct {
-	Files      []string
-	ErrHandler ErrHandler
+	Files          []string
+	ErrHandler     ErrHandler
+	MaxConcurrency int
 }
 
 func NewTextFileSourceGenerator(files []string, errFunc ErrHandler) *TextFileSourceGenerator {
 	return &TextFileSourceGenerator{
-		Files:      files,
-		ErrHandler: errFunc,
+		Files:          files,
+		ErrHandler:     errFunc,
+		MaxConcurrency: DEFAULT_MAX_CONCURRENCY,
 	}
 }
 
@@ -106,7 +119,7 @@ func (tf *TextFileSourceGenerator) Process() <-chan *PipelineSourceInstance {
 			}
 
 			sourceChan <- &PipelineSourceInstance{
-				Processor: NewTextFileProcessor(file, tf.ErrHandler),
+				Processor: NewTextFileProcessor(file, tf.MaxConcurrency, tf.ErrHandler),
 				Info:      info,
 			}
 		}

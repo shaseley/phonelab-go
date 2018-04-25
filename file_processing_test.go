@@ -8,7 +8,7 @@ import (
 func TextFileProcessorTestCommon(filename string) (int, error) {
 	var err error
 
-	processor := NewTextFileProcessor(filename, func(e error) {
+	processor := NewTextFileProcessor(filename, DEFAULT_MAX_CONCURRENCY, func(e error) {
 		err = e
 	})
 
@@ -100,7 +100,7 @@ func TestTextFileProcessorMux(t *testing.T) {
 
 	const NUM_OPENS = 10
 
-	processor := NewTextFileProcessor("./test/test.log", func(e error) {
+	processor := NewTextFileProcessor("./test/test.log", DEFAULT_MAX_CONCURRENCY, func(e error) {
 		t.Log("Error: ", e)
 		t.FailNow()
 	})

@@ -257,7 +257,12 @@ func (conf *PipelineSourceConf) ToPipelineSourceGenerator() (PipelineSourceGener
 
 	switch conf.Type {
 	case PipelineSourceFile:
-		return NewTextFileSourceGenerator(expanded, errHandler), nil
+		gen := NewTextFileSourceGenerator(expanded, errHandler)
+		if v, ok := conf.Args["max_concurrency"]; ok {
+			fmt.Println("Set max_concurrency")
+			gen.MaxConcurrency = v.(int)
+		}
+		return gen, nil
 	case PipelineSourcePhonelab:
 		// FIXME: Currently, we're assuming that each 'source' is
 		// finding an info.json. Given this assumption, the device is
