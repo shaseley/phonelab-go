@@ -29,17 +29,16 @@ func (info *TextFileSourceInfo) Context() string {
 
 type ErrHandler func(error)
 
-func NewTextFileProcessor(file string, maxConcurrency int, errHandler ErrHandler) *TextFileProcessor {
+func NewTextFileProcessor(file string, semChannel chan int, errHandler ErrHandler) *TextFileProcessor {
 	return &TextFileProcessor{
-		Filename:       file,
-		ErrHandler:     errHandler,
-		MaxConcurrency: maxConcurrency,
-		semChannel:     make(chan int, maxConcurrency),
+		Filename:   file,
+		ErrHandler: errHandler,
+		semChannel: semChannel,
 	}
 }
 
 func (p *TextFileProcessor) processFile(outChan chan interface{}) {
-	if p.MaxConcurrency > 0 && p.semChannel != nil {
+	if p.semChannel != nil {
 		p.semChannel <- 1
 		defer func() {
 			<-p.semChannel
@@ -59,6 +58,7 @@ func (p *TextFileProcessor) processFile(outChan chan interface{}) {
 			panic(fmt.Sprintf("Error opening file: %v", err))
 		}
 	}
+	defer file.Close()
 
 	scanner, err := file.Reader(0)
 	if err != nil {
@@ -112,6 +112,12 @@ func NewTextFileSourceGenerator(files []string, errFunc ErrHandler) *TextFileSou
 func (tf *TextFileSourceGenerator) Process() <-chan *PipelineSourceInstance {
 	sourceChan := make(chan *PipelineSourceInstance)
 
+	var semChannel chan int = nil
+
+	if tf.MaxConcurrency > 0 {
+		semChannel = make(chan int, tf.MaxConcurrency)
+	}
+
 	go func() {
 		for _, file := range tf.Files {
 			info := &TextFileSourceInfo{
@@ -119,7 +125,7 @@ func (tf *TextFileSourceGenerator) Process() <-chan *PipelineSourceInstance {
 			}
 
 			sourceChan <- &PipelineSourceInstance{
-				Processor: NewTextFileProcessor(file, tf.MaxConcurrency, tf.ErrHandler),
+				Processor: NewTextFileProcessor(file, semChannel, tf.ErrHandler),
 				Info:      info,
 			}
 		}
